@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import Card from '@/components/ui/Card';
 import type { Aula, ItemPronuncia, MaterialAula } from '@/types';
 
@@ -34,6 +34,7 @@ function formatarCategoria(categoria?: Aula['categoria']) {
 
 export default function AulaDetalhePage() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const aulaId = Array.isArray(params.id) ? params.id[0] : params.id;
 
   const [aula, setAula] = useState<Aula | null>(null);
@@ -75,6 +76,23 @@ export default function AulaDetalhePage() {
   useEffect(() => {
     void carregarAula();
   }, [carregarAula]);
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'materiais') {
+      setAba('materiais');
+      return;
+    }
+
+    if (tab === 'pronuncia') {
+      setAba(aula?.categoria === 'pronuncia' ? 'pronuncia' : 'visao-geral');
+      return;
+    }
+
+    if (tab === 'visao-geral') {
+      setAba('visao-geral');
+    }
+  }, [aula?.categoria, searchParams]);
 
   const materiais = aula?.materiais ?? [];
   const itensPronuncia = aula?.pronuncia?.itens ?? [];

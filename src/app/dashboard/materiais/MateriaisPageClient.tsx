@@ -25,13 +25,10 @@ export default function MateriaisPageClient() {
 
       const { aulas }: { aulas: Aula[] } = await resAulas.json();
 
-      // Filtrar apenas aulas que têm materiais
-      const result = aulas
-        .map((aula) => ({
-          aula,
-          materiais: aula.materiais || [],
-        }))
-        .filter((item) => item.materiais.length > 0);
+      const result = aulas.map((aula) => ({
+        aula,
+        materiais: aula.materiais || [],
+      }));
 
       setAulasComMateriais(result);
     } catch (err) {
@@ -138,12 +135,12 @@ export default function MateriaisPageClient() {
             />
           </svg>
           <h3 className="mt-2 text-sm font-semibold text-gray-900 dark:text-white">
-            Nenhum material encontrado
+            {aulasComMateriais.length === 0 ? 'Nenhuma aula encontrada' : 'Nenhuma aula encontrada para este filtro'}
           </h3>
           <p className="mt-1 text-sm text-gray-500 dark:text-white/50">
-            {filtroAula
-              ? 'Tente outro termo de busca'
-              : 'Adicione materiais às suas aulas para vê-los aqui'}
+            {aulasComMateriais.length === 0
+              ? 'Crie sua primeira aula para começar a anexar materiais'
+              : 'Tente outro termo de busca'}
           </p>
           <Link
             href="/dashboard/aulas"
@@ -158,7 +155,7 @@ export default function MateriaisPageClient() {
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>
-            Criar aula com materiais
+            Criar aula
           </Link>
         </div>
       ) : (
@@ -201,7 +198,7 @@ function MaterialesAulaCard({ item }: MaterialesAulaCardProps) {
             </p>
           </div>
           <Link
-            href={`/dashboard/aulas/${aula.id}`}
+            href={`/dashboard/aulas/${aula.id}?tab=materiais`}
             className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 dark:text-white/60 hover:text-primary dark:hover:text-cyan hover:bg-gray-100 dark:hover:bg-white/[0.05] transition-colors flex-shrink-0"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -212,17 +209,23 @@ function MaterialesAulaCard({ item }: MaterialesAulaCardProps) {
                 d="M9 19l-7-7 7-7m8 14l-8-8"
               />
             </svg>
-            Ver aula
+            Gerenciar anexos
           </Link>
         </div>
       </div>
 
       {/* Lista de materiais */}
-      <div className="divide-y divide-gray-100 dark:divide-white/[0.05]">
-        {materiais.map((material) => (
-          <MaterialItem key={material.id} material={material} />
-        ))}
-      </div>
+      {materiais.length === 0 ? (
+        <div className="px-6 py-4 text-sm text-gray-500 dark:text-white/50">
+          Esta aula ainda não possui materiais. Clique em "Gerenciar anexos" para adicionar.
+        </div>
+      ) : (
+        <div className="divide-y divide-gray-100 dark:divide-white/[0.05]">
+          {materiais.map((material) => (
+            <MaterialItem key={material.id} material={material} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
