@@ -2,18 +2,26 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Aula, MaterialAula } from '@/types/index';
+import { Aula, MaterialAula, CategoriaAula } from '@/types/index';
 
 interface AulaComMateriais {
   aula: Aula;
   materiais: MaterialAula[];
 }
 
+const CATEGORIAS_AULA: CategoriaAula[] = ['geral', 'gramatica', 'vocabulario', 'conversacao', 'pronuncia'];
+
 export default function MateriaisPageClient() {
   const [aulasComMateriais, setAulasComMateriais] = useState<AulaComMateriais[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filtroAula, setFiltroAula] = useState<string>('');
+  const [mostraFormulario, setMostraFormulario] = useState(false);
+  const [criandoAula, setCriandoAula] = useState(false);
+
+  // Formulário de criação de aula
+  const [novaAulaTitle, setNovaAulaTitle] = useState('');
+  const [novaAulaCategoria, setNovaAulaCategoria] = useState<CategoriaAula>('geral');
 
   const carregarMateriais = useCallback(async () => {
     try {
@@ -23,7 +31,8 @@ export default function MateriaisPageClient() {
       const resAulas = await fetch('/api/aulas');
       if (!resAulas.ok) throw new Error('Erro ao carregar aulas');
 
-      const { aulas }: { aulas: Aula[] } = await resAulas.json();
+      const data = await resAulas.json();
+      const aulas: Aula[] = data.aulas || [];
 
       const result = aulas.map((aula) => ({
         aula,
@@ -38,6 +47,47 @@ export default function MateriaisPageClient() {
       setLoading(false);
     }
   }, []);
+
+  const criarNovaAula = useCallback(async () => {
+    const titulo = novaAulaTitle.trim();
+
+    if (!titulo) {
+      setError('Informe o título da aula');
+      return;
+    }
+
+    setCriandoAula(true);
+    setError(null);
+
+    try {
+      const res = await fetch('/api/aulas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          titulo,
+          categoria: novaAulaCategoria,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro ao criar aula');
+      }
+
+      setNovaAulaTitle('');
+      setNovaAulaCategoria('geral');
+      setMostraFormulario(false);
+      setError(null);
+
+      // Atualizar lista
+      await carregarMateriais();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao criar aula');
+    } finally {
+      setCriandoAula(false);
+    }
+  }, [novaAulaTitle, novaAulaCategoria, carregarMateriais]);
 
   useEffect(() => {
     carregarMateriais();
@@ -89,10 +139,84 @@ export default function MateriaisPageClient() {
             {aulasComMateriais.length} aula{aulasComMateriais.length !== 1 ? 's' : ''}
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() => setMostraFormulario(!mostraFormulario)}
+          className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-primary to-cyan px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary/25 transition-all hover:shadow-lg"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+          {mostraFormulario ? 'Cancelar' : 'Nova aula'}
+        </button>
       </div>
 
+      {/* Formulário de criação */}
+      {mostraFormulario && (
+        <div className="rounded-2xl border border-gray-200 dark:border-white/[0.1] bg-gradient-to-br from-gray-50 to-white dark:from-white/[0.05] dark:to-white/[0.02] p-6 space-y-4">
+          <div>
+            <label className="text-sm font-semibold text-gray-700 dark:text-white/80 block mb-2">
+              Título da aula
+            </label>
+            <input
+              type="text"
+              placeholder="Ex: Verbos irregulares em espanhol"
+              value={novaAulaTitle}
+              onChange={(e) => setNovaAulaTitle(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-cyan/50 focus:ring-2 focus:ring-cyan/20 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/30"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-semibold text-gray-700 dark:text-white/80 block mb-2">
+              Categoria
+            </label>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+              {CATEGORIAS_AULA.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setNovaAulaCategoria(cat)}
+                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
+                    novaAulaCategoria === cat
+                      ? 'bg-primary/20 text-primary border border-primary/30'
+                      : 'bg-gray-100 text-gray-600 border border-gray-200 hover:border-gray-300 dark:bg-white/10 dark:text-white/60 dark:border-white/10'
+                  }`}
+                >
+                  {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {error && mostraFormulario && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
+              {error}
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              onClick={criarNovaAula}
+              disabled={criandoAula || !novaAulaTitle.trim()}
+              className="flex-1 rounded-lg bg-gradient-to-r from-primary to-cyan px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {criandoAula ? 'Criando...' : 'Criar aula'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMostraFormulario(false)}
+              className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-white/70"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Filtro */}
-      {aulasComMateriais.length > 0 && (
+      {aulasComMateriais.length > 0 && !mostraFormulario && (
         <div className="flex items-center gap-2">
           <input
             type="text"
@@ -113,13 +237,13 @@ export default function MateriaisPageClient() {
       )}
 
       {/* Lista de materiais */}
-      {error && (
+      {error && !mostraFormulario && (
         <div className="rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 p-4 text-sm text-red-700 dark:text-red-200">
           {error}
         </div>
       )}
 
-      {aulasFiltradasComMateriais.length === 0 ? (
+      {aulasFiltradasComMateriais.length === 0 && !mostraFormulario ? (
         <div className="rounded-2xl border-2 border-dashed border-gray-200 dark:border-white/[0.1] p-12 text-center">
           <svg
             className="mx-auto h-12 w-12 text-gray-400 dark:text-white/20"
@@ -142,8 +266,8 @@ export default function MateriaisPageClient() {
               ? 'Crie sua primeira aula para começar a anexar materiais'
               : 'Tente outro termo de busca'}
           </p>
-          <Link
-            href="/dashboard/aulas"
+          <button
+            onClick={() => setMostraFormulario(true)}
             className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary/10 dark:bg-primary/15 px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/20 dark:hover:bg-primary/25"
           >
             <svg
@@ -155,15 +279,17 @@ export default function MateriaisPageClient() {
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>
-            Criar aula
-          </Link>
+            Criar primeira aula
+          </button>
         </div>
       ) : (
-        <div className="space-y-4">
-          {aulasFiltradasComMateriais.map((item) => (
-            <MaterialesAulaCard key={item.aula.id} item={item} />
-          ))}
-        </div>
+        !mostraFormulario && (
+          <div className="space-y-4">
+            {aulasFiltradasComMateriais.map((item) => (
+              <MaterialesAulaCard key={item.aula.id} item={item} />
+            ))}
+          </div>
+        )
       )}
     </div>
   );
