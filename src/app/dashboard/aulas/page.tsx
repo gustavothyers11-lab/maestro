@@ -45,19 +45,46 @@ async function getFFmpeg(): Promise<FFmpeg> {
   ffmpegLoadPromise = (async () => {
     try {
       const ffmpeg = new FFmpeg();
-      const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.15/dist/esm';
+      const loadAttempts: Array<() => Promise<void>> = [
+        // UMD sem worker explícito é mais estável em browsers com restrições.
+        async () => {
+          const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.15/dist/umd';
+          await ffmpeg.load({
+            coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+            wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+          });
+        },
+        async () => {
+          const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.15/dist/umd';
+          await ffmpeg.load({
+            coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+            wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+          });
+        },
+      ];
 
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-        workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
-      });
+      let ultimoErro: unknown = null;
+      for (const tentarLoad of loadAttempts) {
+        try {
+          await tentarLoad();
+          ultimoErro = null;
+          break;
+        } catch (erroTentativa) {
+          ultimoErro = erroTentativa;
+        }
+      }
+
+      if (ultimoErro) {
+        throw ultimoErro;
+      }
 
       ffmpegInstance = ffmpeg;
       return ffmpeg;
     } catch (e) {
       ffmpegLoadPromise = null;
-      throw e instanceof Error ? e : new Error(`Erro ao carregar FFmpeg: ${e}`);
+      throw e instanceof Error
+        ? e
+        : new Error('Falha ao carregar FFmpeg. Verifique conexão, bloqueadores e tente novamente.');
     }
   })();
 
@@ -278,7 +305,12 @@ function EtapaTranscricao({
       setStatusUpload('');
     } catch (e) {
       setStatusUpload('');
-      setErroUpload(e instanceof Error ? e.message : 'Erro ao processar e transcrever o arquivo.');
+      const mensagemBase = e instanceof Error ? e.message : 'Erro ao processar e transcrever o arquivo.';
+      if (/load failed|failed to fetch|networkerror/i.test(mensagemBase)) {
+        setErroUpload('Não foi possível carregar o FFmpeg no navegador. Verifique conexão, desative bloqueadores (adblock/shields) e tente novamente.');
+      } else {
+        setErroUpload(mensagemBase);
+      }
     } finally {
       setProcessandoUpload(false);
     }
