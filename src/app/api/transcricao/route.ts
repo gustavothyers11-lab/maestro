@@ -2,10 +2,51 @@ import { NextResponse } from 'next/server';
 
 export const maxDuration = 60;
 
+interface AnthropicMessageResponse {
+  content?: Array<{ type?: string; text?: string }>;
+}
+
 function nomeSeguroParaUpload(nomeOriginal: string | undefined): string {
   const base = (nomeOriginal || 'audio').normalize('NFKD').replace(/[^a-zA-Z0-9._-]/g, '_');
   if (/\.(mp3|m4a|wav|webm|ogg)$/i.test(base)) return base;
   return `${base}.mp3`;
+}
+
+async function refinarComSonnet(transcricao: string): Promise<string> {
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (!anthropicKey || !transcricao.trim()) return transcricao;
+
+  const model = process.env.ANTHROPIC_SONNET_MODEL || 'claude-3-5-sonnet-latest';
+
+  const system = 'Você é um revisor de transcrição em espanhol. Mantenha o idioma espanhol e preserve o conteúdo original.';
+  const prompt = `Refine o texto abaixo com correções leves de pontuação e legibilidade, sem traduzir e sem inventar informações.\n\nTexto:\n${transcricao.slice(0, 16000)}`;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': anthropicKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 3000,
+      temperature: 0,
+      system,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+
+  if (!res.ok) return transcricao;
+
+  const data = (await res.json()) as AnthropicMessageResponse;
+  const textoRefinado = (data.content ?? [])
+    .filter((c) => c.type === 'text')
+    .map((c) => c.text ?? '')
+    .join('\n')
+    .trim();
+
+  return textoRefinado || transcricao;
 }
 
 export async function POST(request: Request) {
@@ -52,7 +93,8 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ transcricao: texto });
+    const transcricaoFinal = await refinarComSonnet(texto);
+    return NextResponse.json({ transcricao: transcricaoFinal });
   } catch (e) {
     return NextResponse.json(
       {
