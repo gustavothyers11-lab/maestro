@@ -23,7 +23,7 @@ export default function MateriaisPageClient() {
       const resAulas = await fetch('/api/aulas');
       if (!resAulas.ok) throw new Error('Erro ao carregar aulas');
 
-      const aulas: Aula[] = await resAulas.json();
+      const { aulas }: { aulas: Aula[] } = await resAulas.json();
 
       // Filtrar apenas aulas que têm materiais
       const result = aulas
