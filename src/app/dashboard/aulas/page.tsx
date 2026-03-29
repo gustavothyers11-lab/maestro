@@ -240,6 +240,33 @@ function EtapaTranscricao({
     setTamanhoMp3Mb(null);
   }, []);
 
+  const enviarParaTranscricao = useCallback(async (blob: Blob, fileName: string) => {
+    const formData = new FormData();
+    formData.append('audio', blob, fileName);
+
+    setStatusUpload('Enviando para transcrição...');
+    const req = fetch('/api/transcricao', {
+      method: 'POST',
+      body: formData,
+    });
+
+    setStatusUpload('Transcrevendo com Groq Whisper...');
+    const res = await req;
+    const payload = await res.json();
+
+    if (!res.ok) {
+      throw new Error(payload.error || `Erro ${res.status} ao transcrever.`);
+    }
+
+    const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
+    setTranscricao(texto);
+    setSucessoUpload(`Transcrição concluída! ${texto.length.toLocaleString('pt-BR')} caracteres extraídos`);
+
+    requestAnimationFrame(() => {
+      transcricaoRef.current?.focus();
+    });
+  }, [setTranscricao]);
+
   const transcreverAutomaticamente = useCallback(async () => {
     if (!arquivoMidia) return;
 
@@ -248,10 +275,29 @@ function EtapaTranscricao({
     setSucessoUpload('');
     setTamanhoMp3Mb(null);
 
+    const nomeLower = arquivoMidia.name.toLowerCase();
+    const ext = nomeLower.includes('.') ? nomeLower.slice(nomeLower.lastIndexOf('.')) : '';
+    const isAudioFile = arquivoMidia.type.startsWith('audio/') || ['.m4a', '.mp3', '.wav'].includes(ext);
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
     const inputName = `input${arquivoMidia.name.slice(arquivoMidia.name.lastIndexOf('.')) || '.bin'}`;
     const outputName = 'output.mp3';
 
     try {
+      // iOS WebKit costuma falhar com FFmpeg.wasm para vídeo; áudio pode ir direto.
+      if (isIOS && !isAudioFile) {
+        throw new Error('No iPhone/iPad, a extração local de áudio de vídeo pode falhar no navegador. Envie um arquivo de áudio (m4a/mp3/wav) para transcrever automaticamente.');
+      }
+
+      if (isAudioFile) {
+        setStatusUpload('Preparando áudio...');
+        setTamanhoMp3Mb(arquivoMidia.size / (1024 * 1024));
+        await enviarParaTranscricao(arquivoMidia, arquivoMidia.name || 'audio.m4a');
+        setStatusUpload('');
+        return;
+      }
+
       setStatusUpload('Preparando FFmpeg...');
       const ffmpeg = await getFFmpeg();
 
@@ -274,31 +320,7 @@ function EtapaTranscricao({
       const mp3Blob = new Blob([mp3Bytes] as any[], { type: 'audio/mpeg' });
       const mp3SizeMb = mp3Blob.size / (1024 * 1024);
       setTamanhoMp3Mb(mp3SizeMb);
-
-      const formData = new FormData();
-      formData.append('audio', mp3Blob, 'audio-extraido.mp3');
-
-      setStatusUpload('Enviando para transcrição...');
-      const req = fetch('/api/transcricao', {
-        method: 'POST',
-        body: formData,
-      });
-
-      setStatusUpload('Transcrevendo com Groq Whisper...');
-      const res = await req;
-      const payload = await res.json();
-
-      if (!res.ok) {
-        throw new Error(payload.error || `Erro ${res.status} ao transcrever.`);
-      }
-
-      const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
-      setTranscricao(texto);
-      setSucessoUpload(`Transcrição concluída! ${texto.length.toLocaleString('pt-BR')} caracteres extraídos`);
-
-      requestAnimationFrame(() => {
-        transcricaoRef.current?.focus();
-      });
+      await enviarParaTranscricao(mp3Blob, 'audio-extraido.mp3');
 
       await ffmpeg.deleteFile(inputName).catch(() => undefined);
       await ffmpeg.deleteFile(outputName).catch(() => undefined);
@@ -307,14 +329,14 @@ function EtapaTranscricao({
       setStatusUpload('');
       const mensagemBase = e instanceof Error ? e.message : 'Erro ao processar e transcrever o arquivo.';
       if (/load failed|failed to fetch|networkerror/i.test(mensagemBase)) {
-        setErroUpload('Não foi possível carregar o FFmpeg no navegador. Verifique conexão, desative bloqueadores (adblock/shields) e tente novamente.');
+        setErroUpload('Não foi possível carregar o FFmpeg no navegador. No iPhone/iPad, prefira enviar áudio (m4a/mp3/wav) ou tente no desktop para extrair áudio de vídeo.');
       } else {
         setErroUpload(mensagemBase);
       }
     } finally {
       setProcessandoUpload(false);
     }
-  }, [arquivoMidia, setTranscricao]);
+  }, [arquivoMidia, enviarParaTranscricao]);
 
   return (
     <div className="space-y-5">
