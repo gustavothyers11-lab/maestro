@@ -77,20 +77,59 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Título da aula é obrigatório.' }, { status: 400 });
   }
 
-  const { data, error } = await supabase
-    .from('aulas')
-    .insert({
-      titulo,
-      status,
-      pdf_url: null,
-      anotacoes: serializeAulaMetadata({ categoria, transcricao, resumo, materiais: [], pronuncia: null }),
-    })
-    .select()
-    .single();
+  const basePayload = {
+    titulo,
+    status,
+    pdf_url: null,
+    anotacoes: serializeAulaMetadata({ categoria, transcricao, resumo, materiais: [], pronuncia: null }),
+  };
 
-  if (error || !data) {
-    return NextResponse.json({ error: `Erro ao criar aula: ${error?.message ?? 'sem dados'}` }, { status: 500 });
+  const ownerPayloads: Array<Record<string, unknown>> = [
+    { user_id: user.id },
+    { usuario_id: user.id },
+    {},
+  ];
+
+  let data: Record<string, unknown> | null = null;
+  let error: { message?: string; code?: string } | null = null;
+
+  for (const ownerPayload of ownerPayloads) {
+    const result = await supabase
+      .from('aulas')
+      .insert({ ...basePayload, ...ownerPayload })
+      .select()
+      .single();
+
+    if (!result.error && result.data) {
+      data = result.data as Record<string, unknown>;
+      error = null;
+      break;
+    }
+
+    error = result.error as { message?: string; code?: string };
+
+    // 42703 = coluna não existe; tenta próximo payload de owner
+    if (error?.code === '42703') {
+      continue;
+    }
+
+    // Erros diferentes param as tentativas para preservar diagnóstico real
+    break;
   }
 
-  return NextResponse.json({ aula: rowToAula(data as Record<string, unknown>) }, { status: 201 });
+  if (error || !data) {
+    const msg = error?.message ?? 'sem dados';
+    const isRlsError = /row-level security|policy/i.test(msg);
+
+    if (isRlsError) {
+      return NextResponse.json(
+        { error: 'Erro ao criar aula: política RLS bloqueou o insert. Verifique se a policy de insert permite auth.uid() = user_id (ou usuario_id).' },
+        { status: 500 },
+      );
+    }
+
+    return NextResponse.json({ error: `Erro ao criar aula: ${msg}` }, { status: 500 });
+  }
+
+  return NextResponse.json({ aula: rowToAula(data) }, { status: 201 });
 }
