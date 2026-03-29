@@ -87,8 +87,7 @@ export default function LoginPage() {
     setErro(null);
 
     const supabase = createClient();
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || window.location.origin;
-    const redirectTo = new URL('/auth/callback?next=/dashboard', siteUrl).toString();
+    const redirectTo = new URL('/auth/callback?next=/dashboard', window.location.origin).toString();
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
