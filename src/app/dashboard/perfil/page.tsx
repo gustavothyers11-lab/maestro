@@ -5,6 +5,13 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
+interface ProfileStats {
+  nivel: number;
+  xpTotal: number;
+  streakAtual: number;
+  taxaAcerto: number;
+}
+
 interface UserInfo {
   email: string;
   id: string;
@@ -12,34 +19,64 @@ interface UserInfo {
   initials: string;
 }
 
-const STATS = [
-  { key: 'nivel', label: 'Nível', valor: '5', icone: '⚡' },
-  { key: 'xp', label: 'XP Total', valor: '1.250', icone: '🏆' },
-  { key: 'streak', label: 'Streak', valor: '7 dias', icone: '🔥' },
-  { key: 'acerto', label: 'Taxa de acerto', valor: '89%', icone: '🎯' },
-];
+const DEFAULT_STATS: ProfileStats = {
+  nivel: 1,
+  xpTotal: 0,
+  streakAtual: 0,
+  taxaAcerto: 0,
+};
 
 export default function PerfilPage() {
   const router = useRouter();
   const [user, setUser] = useState<UserInfo | null>(null);
+  const [stats, setStats] = useState<ProfileStats>(DEFAULT_STATS);
+  const [carregandoStats, setCarregandoStats] = useState(true);
   const [saindo, setSaindo] = useState(false);
 
   useEffect(() => {
-    createClient()
-      .auth.getUser()
-      .then(({ data }) => {
-        const u = data.user;
-        if (!u) return;
-        const email = u.email ?? '';
-        const nome =
-          (u.user_metadata?.full_name as string | undefined) ?? email.split('@')[0];
-        setUser({
-          email,
-          id: u.id,
-          nome,
-          initials: nome.slice(0, 2).toUpperCase(),
-        });
+    let cancelado = false;
+
+    async function carregarDadosPerfil() {
+      const supabase = createClient();
+
+      const { data } = await supabase.auth.getUser();
+      const u = data.user;
+      if (!u || cancelado) return;
+
+      const email = u.email ?? '';
+      const nome =
+        (u.user_metadata?.full_name as string | undefined) ?? email.split('@')[0];
+
+      setUser({
+        email,
+        id: u.id,
+        nome,
+        initials: nome.slice(0, 2).toUpperCase(),
       });
+
+      try {
+        const res = await fetch('/api/progresso');
+        const payload = await res.json();
+        if (!res.ok || cancelado) return;
+
+        setStats({
+          nivel: typeof payload.nivelAtual === 'number' ? payload.nivelAtual : 1,
+          xpTotal: typeof payload.xpTotal === 'number' ? payload.xpTotal : 0,
+          streakAtual: typeof payload.streakAtual === 'number' ? payload.streakAtual : 0,
+          taxaAcerto: typeof payload.taxaAcerto === 'number' ? payload.taxaAcerto : 0,
+        });
+      } catch {
+        if (!cancelado) setStats(DEFAULT_STATS);
+      } finally {
+        if (!cancelado) setCarregandoStats(false);
+      }
+    }
+
+    carregarDadosPerfil();
+
+    return () => {
+      cancelado = true;
+    };
   }, []);
 
   const handleLogout = useCallback(async () => {
@@ -47,6 +84,35 @@ export default function PerfilPage() {
     await createClient().auth.signOut();
     router.push('/login');
   }, [router]);
+
+  const statsCards = [
+    {
+      key: 'nivel',
+      label: 'Nível',
+      valor: carregandoStats ? '...' : String(stats.nivel),
+      icone: '⚡',
+    },
+    {
+      key: 'xp',
+      label: 'XP Total',
+      valor: carregandoStats ? '...' : stats.xpTotal.toLocaleString('pt-BR'),
+      icone: '🏆',
+    },
+    {
+      key: 'streak',
+      label: 'Streak',
+      valor: carregandoStats
+        ? '...'
+        : `${stats.streakAtual} ${stats.streakAtual === 1 ? 'dia' : 'dias'}`,
+      icone: '🔥',
+    },
+    {
+      key: 'acerto',
+      label: 'Taxa de acerto',
+      valor: carregandoStats ? '...' : `${stats.taxaAcerto}%`,
+      icone: '🎯',
+    },
+  ];
 
   return (
     <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
@@ -92,7 +158,7 @@ export default function PerfilPage() {
             Seu progresso
           </h2>
           <div className="grid grid-cols-2 gap-3">
-            {STATS.map((s) => (
+            {statsCards.map((s) => (
               <div
                 key={s.key}
                 className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1a1a2e] p-4 text-center"

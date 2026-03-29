@@ -1,7 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
 	output: undefined,
-	experimental: {},
+	experimental: {
+		serverActions: {
+			bodySizeLimit: '10mb',
+		},
+	},
 	typescript: {
 		ignoreBuildErrors: false,
 	},

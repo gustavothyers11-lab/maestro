@@ -2,8 +2,10 @@
 
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import Card from '@/components/ui/Card';
 import ProgressBar from '@/components/ui/ProgressBar';
 import type { Genero } from '@/types';
@@ -31,6 +33,31 @@ type Etapa = 1 | 2 | 3;
 type Direcao = 'next' | 'prev';
 
 const TEMAS_DISPONIVEIS = ['Vocabulário', 'Verbos', 'Frases', 'Gírias', 'Expressões'] as const;
+const ACCEPTED_MEDIA = '.mp4,.mov,.avi,.mkv,.webm,.m4a,.mp3,.wav';
+
+let ffmpegInstance: FFmpeg | null = null;
+let ffmpegLoadPromise: Promise<FFmpeg> | null = null;
+
+async function getFFmpeg(): Promise<FFmpeg> {
+  if (ffmpegInstance) return ffmpegInstance;
+  if (ffmpegLoadPromise) return ffmpegLoadPromise;
+
+  ffmpegLoadPromise = (async () => {
+    const ffmpeg = new FFmpeg();
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
+
+    await ffmpeg.load({
+      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+      workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
+    });
+
+    ffmpegInstance = ffmpeg;
+    return ffmpeg;
+  })();
+
+  return ffmpegLoadPromise;
+}
 
 // ---------------------------------------------------------------------------
 // Stepper visual
@@ -163,8 +190,85 @@ function EtapaTranscricao({
   const [criandoBaralho, setCriandoBaralho] = useState(false);
   const [nomeNovoBaralho, setNomeNovoBaralho] = useState('');
   const [salvandoNovo, setSalvandoNovo] = useState(false);
+  const [arquivoMidia, setArquivoMidia] = useState<File | null>(null);
+  const [processandoUpload, setProcessandoUpload] = useState(false);
+  const [statusUpload, setStatusUpload] = useState('');
+  const [erroUpload, setErroUpload] = useState('');
+  const [sucessoUpload, setSucessoUpload] = useState('');
+  const [tamanhoMp3Mb, setTamanhoMp3Mb] = useState<number | null>(null);
+  const transcricaoRef = useRef<HTMLTextAreaElement | null>(null);
 
   const valido = transcricao.trim().length > 20 && titulo.trim().length > 0 && baralhoId.length > 0;
+
+  const handleSelecionarArquivo = useCallback((file: File | null) => {
+    setArquivoMidia(file);
+    setStatusUpload('');
+    setErroUpload('');
+    setSucessoUpload('');
+    setTamanhoMp3Mb(null);
+  }, []);
+
+  const transcreverAutomaticamente = useCallback(async () => {
+    if (!arquivoMidia) return;
+
+    setProcessandoUpload(true);
+    setErroUpload('');
+    setSucessoUpload('');
+    setTamanhoMp3Mb(null);
+
+    const inputName = `input${arquivoMidia.name.slice(arquivoMidia.name.lastIndexOf('.')) || '.bin'}`;
+    const outputName = 'output.mp3';
+
+    try {
+      setStatusUpload('Preparando FFmpeg...');
+      const ffmpeg = await getFFmpeg();
+
+      setStatusUpload('Extraindo áudio do vídeo...');
+      await ffmpeg.writeFile(inputName, await fetchFile(arquivoMidia));
+      await ffmpeg.exec(['-i', inputName, '-vn', '-ar', '16000', '-ac', '1', '-b:a', '64k', outputName]);
+
+      setStatusUpload('Comprimindo áudio...');
+      const audioData = await ffmpeg.readFile(outputName);
+      const mp3Bytes = audioData instanceof Uint8Array ? audioData : new Uint8Array(audioData as ArrayBuffer);
+      const mp3Blob = new Blob([mp3Bytes], { type: 'audio/mpeg' });
+      const mp3SizeMb = mp3Blob.size / (1024 * 1024);
+      setTamanhoMp3Mb(mp3SizeMb);
+
+      const formData = new FormData();
+      formData.append('audio', mp3Blob, 'audio-extraido.mp3');
+
+      setStatusUpload('Enviando para transcrição...');
+      const req = fetch('/api/transcricao', {
+        method: 'POST',
+        body: formData,
+      });
+
+      setStatusUpload('Transcrevendo com Groq Whisper...');
+      const res = await req;
+      const payload = await res.json();
+
+      if (!res.ok) {
+        throw new Error(payload.error || `Erro ${res.status} ao transcrever.`);
+      }
+
+      const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
+      setTranscricao(texto);
+      setSucessoUpload(`Transcrição concluída! ${texto.length.toLocaleString('pt-BR')} caracteres extraídos`);
+
+      requestAnimationFrame(() => {
+        transcricaoRef.current?.focus();
+      });
+
+      await ffmpeg.deleteFile(inputName).catch(() => undefined);
+      await ffmpeg.deleteFile(outputName).catch(() => undefined);
+      setStatusUpload('');
+    } catch (e) {
+      setStatusUpload('');
+      setErroUpload(e instanceof Error ? e.message : 'Erro ao processar e transcrever o arquivo.');
+    } finally {
+      setProcessandoUpload(false);
+    }
+  }, [arquivoMidia, setTranscricao]);
 
   return (
     <div className="space-y-5">
@@ -192,6 +296,85 @@ function EtapaTranscricao({
         />
       </div>
 
+      {/* Upload opcional de vídeo/áudio */}
+      <div className="space-y-3">
+        <div className="h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-white/15 to-transparent" />
+        <p className="text-xs font-bold uppercase tracking-wider text-center text-gray-500 dark:text-white/45">
+          Ou envie o vídeo da aula
+        </p>
+        <div className="h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-white/15 to-transparent" />
+
+        <div className="rounded-xl border border-dashed border-gray-300 dark:border-white/15 bg-gray-50/70 dark:bg-white/[0.03] p-4 space-y-3">
+          <label
+            htmlFor="upload-video-aula"
+            className="
+              flex w-full items-center justify-center gap-2
+              rounded-xl border border-gray-300 dark:border-white/15
+              bg-white dark:bg-white/5 px-4 py-3 text-sm font-semibold
+              text-gray-700 dark:text-white/75
+              cursor-pointer transition-colors
+              hover:border-cyan/50 hover:text-cyan
+            "
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+            </svg>
+            Escolher vídeo ou áudio
+          </label>
+          <input
+            id="upload-video-aula"
+            type="file"
+            accept={ACCEPTED_MEDIA}
+            className="hidden"
+            onChange={(e) => handleSelecionarArquivo(e.target.files?.[0] ?? null)}
+          />
+
+          {arquivoMidia && (
+            <div className="space-y-3 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.02] p-3">
+              <div className="text-xs text-gray-600 dark:text-white/65 space-y-1">
+                <p>
+                  <span className="font-semibold">Arquivo:</span> {arquivoMidia.name}
+                </p>
+                <p>
+                  <span className="font-semibold">Tamanho:</span> {(arquivoMidia.size / (1024 * 1024)).toFixed(2)} MB
+                </p>
+                {tamanhoMp3Mb !== null && (
+                  <p>
+                    <span className="font-semibold">MP3 gerado:</span> {tamanhoMp3Mb.toFixed(2)} MB
+                  </p>
+                )}
+              </div>
+
+              <button
+                type="button"
+                disabled={processandoUpload}
+                onClick={transcreverAutomaticamente}
+                className="
+                  w-full rounded-xl py-2.5 text-sm font-bold text-white
+                  bg-gradient-to-r from-[#1260CC] to-cyan
+                  shadow-md shadow-[#1260CC]/20
+                  hover:shadow-lg hover:shadow-cyan/20
+                  disabled:opacity-50 disabled:cursor-not-allowed
+                  transition-all duration-200
+                "
+              >
+                {processandoUpload ? 'Processando...' : 'Transcrever automaticamente'}
+              </button>
+            </div>
+          )}
+
+          {statusUpload && (
+            <p className="text-xs font-semibold text-cyan">{statusUpload}</p>
+          )}
+          {erroUpload && (
+            <p className="text-xs font-semibold text-red-500 dark:text-red-400">{erroUpload}</p>
+          )}
+          {sucessoUpload && (
+            <p className="text-xs font-semibold text-green-600 dark:text-green-400">{sucessoUpload}</p>
+          )}
+        </div>
+      </div>
+
       {/* Transcrição */}
       <div className="space-y-1.5">
         <label htmlFor="transcricao" className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-white/50">
@@ -199,6 +382,7 @@ function EtapaTranscricao({
         </label>
         <textarea
           id="transcricao"
+          ref={transcricaoRef}
           value={transcricao}
           onChange={(e) => setTranscricao(e.target.value)}
           placeholder="Cole aqui a transcrição completa da aula em espanhol…"

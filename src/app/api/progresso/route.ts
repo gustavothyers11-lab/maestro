@@ -2,6 +2,7 @@
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { xpTotalParaNivel } from '@/utils/constants';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -58,6 +59,12 @@ export async function GET() {
     (r) => r.resultado === 'bom' || r.resultado === 'facil' || r.resultado === 'dificil',
   ).length;
   const taxaAcerto = totalEstudados > 0 ? Math.round((acertos / totalEstudados) * 100) : 0;
+  const xpTotal = acertos * 10;
+
+  let nivelAtual = 1;
+  while (xpTotalParaNivel(nivelAtual + 1) <= xpTotal) {
+    nivelAtual++;
+  }
 
   // ── Esta semana ───────────────────────────────────────────────────
   const estudadosSemana = registros.filter(
@@ -164,6 +171,9 @@ export async function GET() {
 
   return NextResponse.json({
     totalEstudados,
+    acertosTotal: acertos,
+    xpTotal,
+    nivelAtual,
     estudadosSemana,
     taxaAcerto,
     streakAtual,
