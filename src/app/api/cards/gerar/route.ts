@@ -112,11 +112,11 @@ async function gerarComSonnet(params: {
 // ---------------------------------------------------------------------------
 
 export async function POST(request: Request) {
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const anthropicKey = process.env.ANTHROPIC_API_KEY?.trim();
 
   if (!anthropicKey) {
     return NextResponse.json(
-      { error: 'Configure ANTHROPIC_API_KEY no servidor.' },
+      { error: 'Configure ANTHROPIC_API_KEY no servidor e reinicie o app após editar .env.local.' },
       { status: 500 },
     );
   }
