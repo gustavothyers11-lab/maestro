@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 import Card from '@/components/ui/Card';
 import ProgressBar from '@/components/ui/ProgressBar';
 import type { Genero } from '@/types';
@@ -240,98 +241,73 @@ function EtapaTranscricao({
     setTamanhoMp3Mb(null);
   }, []);
 
-  const enviarParaTranscricao = useCallback(async (
-    blob: Blob,
+  // Abordagem iOS: faz upload direto para Supabase Storage (PUT simples),
+  // depois envia só a URL para o servidor transcrever — evita qualquer
+  // manipulação de bytes/FormData no WebKit que causava DOMException.
+  const transcreverViaStorage = useCallback(async (
+    file: File,
     extensaoPreferida: 'mp3' | 'm4a' | 'wav' = 'mp3',
-    usarBase64Direto = false,
   ) => {
-    // Em iOS/Safari, multipart/FormData pode quebrar com DOMException de pattern.
-    // Enviamos bytes puros para a API, junto com metadados em headers.
-    const bytes = await blob.arrayBuffer();
-    const tipoSeguro = 'application/octet-stream';
+    const supabase = createSupabaseClient();
 
-    const blobToBase64 = async (value: Blob): Promise<string> => {
-      const buffer = await value.arrayBuffer();
-      const bytesArr = new Uint8Array(buffer);
-      const chunkSize = 0x8000;
-      let binary = '';
+    const nomeUnico = `${Date.now()}-${Math.random().toString(36).slice(2)}.${extensaoPreferida}`;
+    const storagePath = `temp/${nomeUnico}`;
 
-      for (let i = 0; i < bytesArr.length; i += chunkSize) {
-        const chunk = bytesArr.subarray(i, i + chunkSize);
-        binary += String.fromCharCode(...chunk);
-      }
-
-      return btoa(binary);
-    };
-
-    setStatusUpload('Enviando para transcrição...');
-    let res: Response;
-    if (usarBase64Direto) {
-      const payload = {
-        audioBase64: await blobToBase64(blob),
-        ext: extensaoPreferida,
-        mime: blob.type || 'audio/mpeg',
-      };
-
-      const reqFallback = fetch('/api/transcricao', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
+    setStatusUpload('Enviando áudio...');
+    const { error: uploadError } = await supabase.storage
+      .from('audio-temp')
+      .upload(storagePath, file, {
+        contentType: file.type || 'audio/mpeg',
+        upsert: false,
       });
 
-      setStatusUpload('Transcrevendo com Groq Whisper...');
-      res = await reqFallback;
-    } else {
-      try {
-      const req = fetch('/api/transcricao', {
-        method: 'POST',
-        headers: {
-          'Content-Type': tipoSeguro,
-        },
-        body: bytes,
-      });
-
-      setStatusUpload('Transcrevendo com Groq Whisper...');
-      res = await req;
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (!/did not match the expected pattern/i.test(msg)) throw e;
-
-        // Fallback: envia em JSON base64 para evitar erro interno do WebKit no upload direto.
-        const payload = {
-          audioBase64: await blobToBase64(blob),
-          ext: extensaoPreferida,
-          mime: blob.type || 'audio/mpeg',
-        };
-
-        const reqFallback = fetch('/api/transcricao', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload),
-        });
-
-        setStatusUpload('Transcrevendo com Groq Whisper...');
-        res = await reqFallback;
-      }
+    if (uploadError) {
+      throw new Error(`Erro ao enviar para storage: ${uploadError.message}`);
     }
+
+    const { data: urlData } = supabase.storage.from('audio-temp').getPublicUrl(storagePath);
+    const publicUrl = urlData?.publicUrl;
+    if (!publicUrl) throw new Error('Não foi possível obter URL do áudio enviado.');
+
+    setStatusUpload('Transcrevendo com Groq Whisper...');
+    const res = await fetch('/api/transcricao', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ storageUrl: publicUrl, ext: extensaoPreferida }),
+    });
+
+    // Limpar arquivo temporário (best-effort, não bloqueia)
+    supabase.storage.from('audio-temp').remove([storagePath]).catch(() => undefined);
 
     const payload = await res.json();
-
-    if (!res.ok) {
-      throw new Error(payload.error || `Erro ${res.status} ao transcrever.`);
-    }
+    if (!res.ok) throw new Error(payload.error || `Erro ${res.status} ao transcrever.`);
 
     const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
     setTranscricao(texto);
     setSucessoUpload(`Transcrição concluída! ${texto.length.toLocaleString('pt-BR')} caracteres extraídos`);
+    requestAnimationFrame(() => { transcricaoRef.current?.focus(); });
+  }, [setTranscricao]);
 
-    requestAnimationFrame(() => {
-      transcricaoRef.current?.focus();
+  // Abordagem desktop: envia bytes diretamente para a API
+  const enviarParaTranscricao = useCallback(async (
+    blob: Blob,
+    extensaoPreferida: 'mp3' | 'm4a' | 'wav' = 'mp3',
+  ) => {
+    setStatusUpload('Enviando para transcrição...');
+    const res = await fetch('/api/transcricao', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: await blob.arrayBuffer(),
     });
+
+    setStatusUpload('Transcrevendo com Groq Whisper...');
+    const payload = await res.json();
+    if (!res.ok) throw new Error(payload.error || `Erro ${res.status} ao transcrever.`);
+
+    const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
+    setTranscricao(texto);
+    setSucessoUpload(`Transcrição concluída! ${texto.length.toLocaleString('pt-BR')} caracteres extraídos`);
+    requestAnimationFrame(() => { transcricaoRef.current?.focus(); });
   }, [setTranscricao]);
 
   const transcreverAutomaticamente = useCallback(async () => {
@@ -352,16 +328,20 @@ function EtapaTranscricao({
     const outputName = 'output.mp3';
 
     try {
-      // iOS WebKit costuma falhar com FFmpeg.wasm para vídeo; áudio pode ir direto.
+      // iOS: vídeo não suportado (sem FFmpeg.wasm no WebKit)
       if (isIOS && !isAudioFile) {
-        throw new Error('No iPhone/iPad, a extração local de áudio de vídeo pode falhar no navegador. Envie um arquivo de áudio (m4a/mp3/wav) para transcrever automaticamente.');
+        throw new Error('No iPhone/iPad, envie um arquivo de áudio (m4a/mp3/wav) para transcrever automaticamente.');
       }
 
       if (isAudioFile) {
         setStatusUpload('Preparando áudio...');
         setTamanhoMp3Mb(arquivoMidia.size / (1024 * 1024));
         const extPreferida: 'mp3' | 'm4a' | 'wav' = ext === '.wav' ? 'wav' : ext === '.m4a' ? 'm4a' : 'mp3';
-        await enviarParaTranscricao(arquivoMidia, extPreferida, isIOS);
+        if (isIOS) {
+          await transcreverViaStorage(arquivoMidia, extPreferida);
+        } else {
+          await enviarParaTranscricao(arquivoMidia, extPreferida);
+        }
         setStatusUpload('');
         return;
       }
@@ -398,8 +378,6 @@ function EtapaTranscricao({
       const mensagemBase = e instanceof Error ? e.message : 'Erro ao processar e transcrever o arquivo.';
       if (/load failed|failed to fetch|networkerror/i.test(mensagemBase)) {
         setErroUpload('Não foi possível carregar o FFmpeg no navegador. No iPhone/iPad, prefira enviar áudio (m4a/mp3/wav) ou tente no desktop para extrair áudio de vídeo.');
-      } else if (/did not match the expected pattern/i.test(mensagemBase)) {
-        setErroUpload(`Safari iOS rejeitou o upload (${mensagemBase}). Etapa: envio/transcrição.`);
       } else {
         setErroUpload(mensagemBase);
       }

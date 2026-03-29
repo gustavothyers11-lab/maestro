@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 export const maxDuration = 60;
 
 interface JsonAudioPayload {
+  storageUrl?: string;
   audioBase64?: string;
   ext?: string;
   mime?: string;
@@ -116,13 +117,46 @@ async function extrairAudioDaRequisicao(request: Request): Promise<{
 }> {
   const contentType = request.headers.get('content-type') || '';
 
-  // Fallback iOS: JSON com base64
+  // Fallback iOS: JSON com base64 ou URL de storage
   if (contentType.includes('application/json')) {
     let body: JsonAudioPayload;
     try {
       body = (await request.json()) as JsonAudioPayload;
     } catch {
       return { audio: null, erro: 'JSON inválido no upload de áudio.' };
+    }
+
+    // Nova abordagem: URL do Supabase Storage (iOS)
+    if (typeof body.storageUrl === 'string' && body.storageUrl.length > 0) {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+      if (!supabaseUrl || !body.storageUrl.startsWith(supabaseUrl)) {
+        return { audio: null, erro: 'URL de storage inválida.' };
+      }
+
+      let downloadRes: Response;
+      try {
+        downloadRes = await fetch(body.storageUrl);
+      } catch {
+        return { audio: null, erro: 'Não foi possível baixar o áudio do storage.' };
+      }
+
+      if (!downloadRes.ok) {
+        return { audio: null, erro: `Erro ao baixar áudio do storage (${downloadRes.status}).` };
+      }
+
+      const raw = new Uint8Array(await downloadRes.arrayBuffer());
+      if (raw.byteLength === 0) return { audio: null, erro: 'Arquivo de áudio vazio no storage.' };
+
+      const detectado = detectarFormatoAudio(raw);
+      const extRaw = (typeof body.ext === 'string' ? body.ext : '').toLowerCase();
+      const extFinal = ['mp3', 'm4a', 'wav'].includes(extRaw) ? extRaw : detectado.ext !== 'bin' ? detectado.ext : 'mp3';
+      const safeMime = detectado.ext !== 'bin' ? detectado.mime : (extFinal === 'wav' ? 'audio/wav' : extFinal === 'm4a' ? 'audio/mp4' : 'audio/mpeg');
+
+      return {
+        audio: new Blob([raw], { type: safeMime }),
+        fileName: nomeSeguroParaUpload(`audio_upload.${extFinal}`),
+        mimeType: safeMime,
+      };
     }
 
     const b64 = body.audioBase64;
