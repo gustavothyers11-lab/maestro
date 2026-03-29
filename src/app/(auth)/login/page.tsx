@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 // ---------------------------------------------------------------------------
@@ -66,23 +66,51 @@ export default function LoginPage() {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
+  useEffect(() => {
+    const errorCode = new URLSearchParams(window.location.search).get('error');
+
+    if (errorCode === 'auth_callback') {
+      setErro('Falha ao concluir o login. Verifique as URLs de redirecionamento do Supabase e tente novamente.');
+      return;
+    }
+
+    if (errorCode === 'auth_config') {
+      setErro('A autenticacao nao esta configurada corretamente no deploy.');
+      return;
+    }
+
+    setErro(null);
+  }, []);
+
   async function handleLoginGoogle() {
     setCarregando(true);
     setErro(null);
 
     const supabase = createClient();
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || window.location.origin;
+    const redirectTo = new URL('/auth/callback?next=/dashboard', siteUrl).toString();
 
-    const { error } = await supabase.auth.signInWithOAuth({
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo,
+        skipBrowserRedirect: true,
       },
     });
 
     if (error) {
       setErro('Falha ao conectar com Google. Tente novamente.');
       setCarregando(false);
+      return;
     }
+
+    if (!data?.url) {
+      setErro('Falha ao iniciar o login.');
+      setCarregando(false);
+      return;
+    }
+
+    window.location.assign(data.url);
   }
 
   return (
