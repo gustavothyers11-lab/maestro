@@ -240,10 +240,15 @@ function EtapaTranscricao({
     setTamanhoMp3Mb(null);
   }, []);
 
-  const enviarParaTranscricao = useCallback(async (blob: Blob) => {
+  const enviarParaTranscricao = useCallback(async (blob: Blob, extensaoPreferida: 'mp3' | 'm4a' | 'wav' = 'mp3') => {
     const formData = new FormData();
-    // Em iOS, alguns nomes (com "/" ou caracteres especiais) geram DOMException.
-    formData.append('audio', blob);
+
+    // Normaliza o conteúdo para evitar DOMException de pattern em iOS/WebKit.
+    const bytes = await blob.arrayBuffer();
+    const tipoSeguro = blob.type && blob.type.startsWith('audio/') ? blob.type : 'audio/mpeg';
+    const blobSeguro = new Blob([bytes], { type: tipoSeguro });
+    const nomeSeguro = `audio_upload.${extensaoPreferida}`;
+    formData.append('audio', blobSeguro, nomeSeguro);
 
     setStatusUpload('Enviando para transcrição...');
     const req = fetch('/api/transcricao', {
@@ -294,7 +299,8 @@ function EtapaTranscricao({
       if (isAudioFile) {
         setStatusUpload('Preparando áudio...');
         setTamanhoMp3Mb(arquivoMidia.size / (1024 * 1024));
-        await enviarParaTranscricao(arquivoMidia);
+        const extPreferida: 'mp3' | 'm4a' | 'wav' = ext === '.wav' ? 'wav' : ext === '.m4a' ? 'm4a' : 'mp3';
+        await enviarParaTranscricao(arquivoMidia, extPreferida);
         setStatusUpload('');
         return;
       }
@@ -321,7 +327,7 @@ function EtapaTranscricao({
       const mp3Blob = new Blob([mp3Bytes] as any[], { type: 'audio/mpeg' });
       const mp3SizeMb = mp3Blob.size / (1024 * 1024);
       setTamanhoMp3Mb(mp3SizeMb);
-      await enviarParaTranscricao(mp3Blob);
+      await enviarParaTranscricao(mp3Blob, 'mp3');
 
       await ffmpeg.deleteFile(inputName).catch(() => undefined);
       await ffmpeg.deleteFile(outputName).catch(() => undefined);
@@ -332,7 +338,7 @@ function EtapaTranscricao({
       if (/load failed|failed to fetch|networkerror/i.test(mensagemBase)) {
         setErroUpload('Não foi possível carregar o FFmpeg no navegador. No iPhone/iPad, prefira enviar áudio (m4a/mp3/wav) ou tente no desktop para extrair áudio de vídeo.');
       } else if (/did not match the expected pattern/i.test(mensagemBase)) {
-        setErroUpload('Formato/nome do arquivo inválido para o navegador. Tente renomear o áudio para algo simples (ex: audio.m4a) e reenviar.');
+        setErroUpload('O Safari iOS recusou o formato do upload. Tente gravar/exportar novamente em M4A ou WAV e reenviar.');
       } else {
         setErroUpload(mensagemBase);
       }
