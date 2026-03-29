@@ -246,17 +246,53 @@ function EtapaTranscricao({
     const bytes = await blob.arrayBuffer();
     const tipoSeguro = 'application/octet-stream';
 
-    setStatusUpload('Enviando para transcrição...');
-    const req = fetch('/api/transcricao', {
-      method: 'POST',
-      headers: {
-        'Content-Type': tipoSeguro,
-      },
-      body: bytes,
-    });
+    const bytesToBase64 = (ab: ArrayBuffer): string => {
+      const arr = new Uint8Array(ab);
+      const chunkSize = 0x8000;
+      let binary = '';
+      for (let i = 0; i < arr.length; i += chunkSize) {
+        const chunk = arr.subarray(i, i + chunkSize);
+        binary += String.fromCharCode(...chunk);
+      }
+      return btoa(binary);
+    };
 
-    setStatusUpload('Transcrevendo com Groq Whisper...');
-    const res = await req;
+    setStatusUpload('Enviando para transcrição...');
+    let res: Response;
+    try {
+      const req = fetch('/api/transcricao', {
+        method: 'POST',
+        headers: {
+          'Content-Type': tipoSeguro,
+        },
+        body: bytes,
+      });
+
+      setStatusUpload('Transcrevendo com Groq Whisper...');
+      res = await req;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/did not match the expected pattern/i.test(msg)) throw e;
+
+      // Fallback iOS: envia em JSON base64 para evitar erro interno do WebKit no upload direto.
+      const payload = {
+        audioBase64: bytesToBase64(bytes),
+        ext: extensaoPreferida,
+        mime: blob.type || 'audio/mpeg',
+      };
+
+      const reqFallback = fetch('/api/transcricao', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      setStatusUpload('Transcrevendo com Groq Whisper...');
+      res = await reqFallback;
+    }
+
     const payload = await res.json();
 
     if (!res.ok) {

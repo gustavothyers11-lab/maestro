@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server';
 
 export const maxDuration = 60;
 
+interface JsonAudioPayload {
+  audioBase64?: string;
+  ext?: string;
+  mime?: string;
+}
+
 interface AnthropicMessageResponse {
   content?: Array<{ type?: string; text?: string }>;
 }
@@ -43,6 +49,47 @@ async function extrairAudioDaRequisicao(request: Request): Promise<{
   erro?: string;
 }> {
   const contentType = request.headers.get('content-type') || '';
+
+  // Fallback iOS: JSON com base64
+  if (contentType.includes('application/json')) {
+    let body: JsonAudioPayload;
+    try {
+      body = (await request.json()) as JsonAudioPayload;
+    } catch {
+      return { audio: null, erro: 'JSON inválido no upload de áudio.' };
+    }
+
+    const b64 = body.audioBase64;
+    if (!b64 || typeof b64 !== 'string') {
+      return { audio: null, erro: 'audioBase64 não informado.' };
+    }
+
+    let bytes: Buffer;
+    try {
+      bytes = Buffer.from(b64, 'base64');
+    } catch {
+      return { audio: null, erro: 'audioBase64 inválido.' };
+    }
+
+    if (!bytes || bytes.byteLength === 0) {
+      return { audio: null, erro: 'audioBase64 vazio.' };
+    }
+
+    const extRaw = (body.ext || 'mp3').toLowerCase();
+    const ext = ['mp3', 'm4a', 'wav'].includes(extRaw) ? extRaw : 'mp3';
+    const safeName = nomeSeguroParaUpload(`audio_upload.${ext}`);
+    const safeMime = typeof body.mime === 'string' && /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(body.mime)
+      ? body.mime
+      : (ext === 'wav' ? 'audio/wav' : ext === 'm4a' ? 'audio/mp4' : 'audio/mpeg');
+
+    const safeBytes = new Uint8Array(bytes);
+
+    return {
+      audio: new Blob([safeBytes] as any[], { type: safeMime }),
+      fileName: safeName,
+      mimeType: safeMime,
+    };
+  }
 
   // Caminho tradicional multipart/form-data
   if (contentType.includes('multipart/form-data')) {
