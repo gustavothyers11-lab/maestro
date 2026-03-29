@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server';
 
 export const maxDuration = 60;
 
+function nomeSeguroParaUpload(nomeOriginal: string | undefined): string {
+  const base = (nomeOriginal || 'audio').normalize('NFKD').replace(/[^a-zA-Z0-9._-]/g, '_');
+  if (/\.(mp3|m4a|wav|webm|ogg)$/i.test(base)) return base;
+  return `${base}.mp3`;
+}
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
@@ -23,7 +29,8 @@ export async function POST(request: Request) {
     }
 
     const payload = new FormData();
-    payload.append('file', audio, audio.name || 'audio.mp3');
+    const filename = nomeSeguroParaUpload(audio.name);
+    payload.append('file', audio, filename);
     payload.append('model', 'whisper-large-v3-turbo');
     payload.append('language', 'es');
     payload.append('response_format', 'text');

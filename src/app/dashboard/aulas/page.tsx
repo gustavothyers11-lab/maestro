@@ -240,9 +240,10 @@ function EtapaTranscricao({
     setTamanhoMp3Mb(null);
   }, []);
 
-  const enviarParaTranscricao = useCallback(async (blob: Blob, fileName: string) => {
+  const enviarParaTranscricao = useCallback(async (blob: Blob) => {
     const formData = new FormData();
-    formData.append('audio', blob, fileName);
+    // Em iOS, alguns nomes (com "/" ou caracteres especiais) geram DOMException.
+    formData.append('audio', blob);
 
     setStatusUpload('Enviando para transcrição...');
     const req = fetch('/api/transcricao', {
@@ -293,7 +294,7 @@ function EtapaTranscricao({
       if (isAudioFile) {
         setStatusUpload('Preparando áudio...');
         setTamanhoMp3Mb(arquivoMidia.size / (1024 * 1024));
-        await enviarParaTranscricao(arquivoMidia, arquivoMidia.name || 'audio.m4a');
+        await enviarParaTranscricao(arquivoMidia);
         setStatusUpload('');
         return;
       }
@@ -320,7 +321,7 @@ function EtapaTranscricao({
       const mp3Blob = new Blob([mp3Bytes] as any[], { type: 'audio/mpeg' });
       const mp3SizeMb = mp3Blob.size / (1024 * 1024);
       setTamanhoMp3Mb(mp3SizeMb);
-      await enviarParaTranscricao(mp3Blob, 'audio-extraido.mp3');
+      await enviarParaTranscricao(mp3Blob);
 
       await ffmpeg.deleteFile(inputName).catch(() => undefined);
       await ffmpeg.deleteFile(outputName).catch(() => undefined);
@@ -330,6 +331,8 @@ function EtapaTranscricao({
       const mensagemBase = e instanceof Error ? e.message : 'Erro ao processar e transcrever o arquivo.';
       if (/load failed|failed to fetch|networkerror/i.test(mensagemBase)) {
         setErroUpload('Não foi possível carregar o FFmpeg no navegador. No iPhone/iPad, prefira enviar áudio (m4a/mp3/wav) ou tente no desktop para extrair áudio de vídeo.');
+      } else if (/did not match the expected pattern/i.test(mensagemBase)) {
+        setErroUpload('Formato/nome do arquivo inválido para o navegador. Tente renomear o áudio para algo simples (ex: audio.m4a) e reenviar.');
       } else {
         setErroUpload(mensagemBase);
       }
