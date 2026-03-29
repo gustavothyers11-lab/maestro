@@ -12,6 +12,12 @@ interface AnthropicMessageResponse {
   content?: Array<{ type?: string; text?: string }>;
 }
 
+interface GroqTranscricaoResult {
+  ok: boolean;
+  status: number;
+  texto: string;
+}
+
 function nomeSeguroParaUpload(nomeOriginal: string | undefined): string {
   const base = (nomeOriginal || 'audio').normalize('NFKD').replace(/[^a-zA-Z0-9._-]/g, '_');
   if (/\.(mp3|m4a|wav|webm|ogg)$/i.test(base)) return base;
@@ -40,6 +46,38 @@ function detectarFormatoAudio(bytes: Uint8Array): { ext: 'wav' | 'mp3' | 'm4a' |
   }
 
   return { ext: 'bin', mime: 'application/octet-stream' };
+}
+
+async function chamarGroqTranscricao(params: {
+  apiKey: string;
+  bytes: ArrayBuffer;
+  fileName: string;
+  mimeType: string;
+}): Promise<GroqTranscricaoResult> {
+  const { apiKey, bytes, fileName, mimeType } = params;
+
+  const payload = new FormData();
+  const file = new File([new Uint8Array(bytes)] as any[], fileName, { type: mimeType });
+
+  payload.append('file', file, fileName);
+  payload.append('model', 'whisper-large-v3-turbo');
+  payload.append('language', 'es');
+  payload.append('response_format', 'text');
+
+  const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: payload,
+  });
+
+  const texto = (await groqRes.text()).trim();
+  return {
+    ok: groqRes.ok,
+    status: groqRes.status,
+    texto,
+  };
 }
 
 async function extrairAudioDaRequisicao(request: Request): Promise<{
@@ -178,32 +216,43 @@ export async function POST(request: Request) {
       );
     }
 
-    const payload = new FormData();
     const filename = fileName || nomeSeguroParaUpload('audio_upload.mp3');
-    const audioBlob = mimeType ? new Blob([audio], { type: mimeType }) : audio;
-    payload.append('file', audioBlob, filename);
-    payload.append('model', 'whisper-large-v3-turbo');
-    payload.append('language', 'es');
-    payload.append('response_format', 'text');
+    const baseMime = mimeType || 'audio/mpeg';
+    const bytes = await audio.arrayBuffer();
 
-    const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: payload,
-    });
+    const tentativas = [
+      { fileName: filename, mimeType: baseMime },
+      { fileName: 'audio_upload.wav', mimeType: 'audio/wav' },
+      { fileName: 'audio_upload.mp3', mimeType: 'audio/mpeg' },
+      { fileName: 'audio_upload.m4a', mimeType: 'audio/mp4' },
+    ];
 
-    const texto = (await groqRes.text()).trim();
+    let ultimo: GroqTranscricaoResult | null = null;
+    for (const tentativa of tentativas) {
+      const resTry = await chamarGroqTranscricao({
+        apiKey,
+        bytes,
+        fileName: tentativa.fileName,
+        mimeType: tentativa.mimeType,
+      });
 
-    if (!groqRes.ok) {
+      ultimo = resTry;
+      if (resTry.ok) break;
+
+      // Se não for o erro clássico de pattern, não adianta insistir em formato.
+      if (!/expected pattern|did not match the expected pattern/i.test(resTry.texto)) {
+        break;
+      }
+    }
+
+    if (!ultimo || !ultimo.ok) {
       return NextResponse.json(
-        { error: texto || 'Falha ao transcrever com Groq Whisper.' },
-        { status: groqRes.status },
+        { error: ultimo?.texto || 'Falha ao transcrever com Groq Whisper.' },
+        { status: ultimo?.status || 502 },
       );
     }
 
-    const transcricaoFinal = await refinarComSonnet(texto);
+    const transcricaoFinal = await refinarComSonnet(ultimo.texto);
     return NextResponse.json({ transcricao: transcricaoFinal });
   } catch (e) {
     return NextResponse.json(
