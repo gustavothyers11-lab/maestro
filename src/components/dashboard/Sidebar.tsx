@@ -15,7 +15,7 @@ interface NavItem {
   label: string;
   href: string;
   icon: React.ReactNode;
-  /** Mostrar na bottom bar mobile (máx 5) */
+  /** Mostrar na bottom bar mobile */
   mobile: boolean;
 }
 
@@ -53,7 +53,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: 'Aulas',
     href: '/dashboard/aulas',
-    mobile: false,
+    mobile: true,
     icon: (
       <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342" />
@@ -63,7 +63,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: 'Materiais',
     href: '/dashboard/materiais',
-    mobile: false,
+    mobile: true,
     icon: (
       <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.66V18.75a2.25 2.25 0 002.25 2.25H18a2.25 2.25 0 002.25-2.25V6.75a48.554 48.554 0 00-3-8.75m0 0V4.5M3 15a48.694 48.694 0 0115.838-.856" />
@@ -239,7 +239,7 @@ export default function Sidebar() {
       </aside>
 
       {/* ───────── Mobile bottom bar ───────── */}
-      <nav className="mobile-bar fixed inset-x-0 bottom-0 z-50 flex lg:hidden items-center justify-around border-t border-gray-200/60 dark:border-white/[0.06] bg-white/90 dark:bg-[#12122a]/95 backdrop-blur-xl px-1 pb-[env(safe-area-inset-bottom)]">
+      <nav className="mobile-bar fixed inset-x-0 bottom-0 z-50 flex lg:hidden items-center justify-start overflow-x-auto border-t border-gray-200/60 dark:border-white/[0.06] bg-white/90 dark:bg-[#12122a]/95 backdrop-blur-xl px-2 pb-[env(safe-area-inset-bottom)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {MOBILE_ITEMS.map((item) => {
           const active = isActive(pathname, item.href);
           return (
@@ -247,8 +247,8 @@ export default function Sidebar() {
               key={item.href}
               href={item.href}
               className={`
-                mobile-bar-item relative flex flex-col items-center gap-0.5
-                px-3 py-2 text-[10px] font-semibold
+                mobile-bar-item relative flex shrink-0 min-w-[74px] flex-col items-center gap-0.5
+                px-2 py-2 text-[10px] font-semibold
                 transition-colors duration-150
                 ${
                   active
