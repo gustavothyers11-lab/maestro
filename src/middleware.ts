@@ -1,16 +1,21 @@
 // Middleware — protege rotas autenticadas e redireciona conforme sessão
-//
-// ⚠️  Proteção de rota desativada temporariamente enquanto o dashboard usa dados mock.
-//     Para ativar: descomente o bloco de redirect abaixo.
 
 import { NextResponse, type NextRequest } from 'next/server';
 
 export async function middleware(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const { pathname } = request.nextUrl;
 
-  // Se Supabase não está configurado, deixa passar todas as rotas (modo dev/mock)
+  const isPublicPath = pathname === '/login' || pathname.startsWith('/auth/callback');
+
+  // Sem variáveis do Supabase, mantém apenas /login acessível.
   if (!supabaseUrl || !supabaseKey) {
+    if (!isPublicPath) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/login';
+      return NextResponse.redirect(url);
+    }
     return NextResponse.next();
   }
 
@@ -40,15 +45,12 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { pathname } = request.nextUrl;
-
-  // TODO: Reativar quando a autenticação estiver integrada ao dashboard
-  // Usuário NÃO autenticado tentando acessar rotas protegidas → redireciona para /login
-  // if (!user && pathname.startsWith('/dashboard')) {
-  //   const url = request.nextUrl.clone();
-  //   url.pathname = '/login';
-  //   return NextResponse.redirect(url);
-  // }
+  // Usuário NÃO autenticado tentando acessar rota privada → redireciona para /login
+  if (!user && !isPublicPath) {
+    const url = request.nextUrl.clone();
+    url.pathname = '/login';
+    return NextResponse.redirect(url);
+  }
 
   // Usuário autenticado tentando acessar /login → redireciona para /dashboard
   if (user && pathname === '/login') {
@@ -61,5 +63,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/login'],
+  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
 };
