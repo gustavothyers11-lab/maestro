@@ -244,7 +244,7 @@ function EtapaTranscricao({
     // Em iOS/Safari, multipart/FormData pode quebrar com DOMException de pattern.
     // Enviamos bytes puros para a API, junto com metadados em headers.
     const bytes = await blob.arrayBuffer();
-    const tipoSeguro = blob.type && blob.type.startsWith('audio/') ? blob.type : 'application/octet-stream';
+    const tipoSeguro = 'application/octet-stream';
     const nomeSeguro = `audio_upload.${extensaoPreferida}`;
 
     setStatusUpload('Enviando para transcrição...');
@@ -253,6 +253,7 @@ function EtapaTranscricao({
       headers: {
         'Content-Type': tipoSeguro,
         'X-Audio-Filename': nomeSeguro,
+        'X-Audio-Mime': blob.type || 'audio/mpeg',
       },
       body: bytes,
     });

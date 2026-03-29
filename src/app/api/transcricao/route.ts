@@ -12,7 +12,12 @@ function nomeSeguroParaUpload(nomeOriginal: string | undefined): string {
   return `${base}.mp3`;
 }
 
-async function extrairAudioDaRequisicao(request: Request): Promise<{ audio: File | null; erro?: string }> {
+async function extrairAudioDaRequisicao(request: Request): Promise<{
+  audio: Blob | null;
+  fileName?: string;
+  mimeType?: string;
+  erro?: string;
+}> {
   const contentType = request.headers.get('content-type') || '';
 
   // Caminho tradicional multipart/form-data
@@ -22,7 +27,11 @@ async function extrairAudioDaRequisicao(request: Request): Promise<{ audio: File
     if (!(audioField instanceof File)) {
       return { audio: null, erro: 'Arquivo de áudio não enviado no campo "audio".' };
     }
-    return { audio: audioField };
+    return {
+      audio: audioField,
+      fileName: nomeSeguroParaUpload(audioField.name),
+      mimeType: audioField.type || 'audio/mpeg',
+    };
   }
 
   // Caminho iOS-safe: bytes puros no body
@@ -32,10 +41,17 @@ async function extrairAudioDaRequisicao(request: Request): Promise<{ audio: File
   }
 
   const filenameHeader = request.headers.get('x-audio-filename') || 'audio_upload.mp3';
+  const mimeHeader = request.headers.get('x-audio-mime') || 'audio/mpeg';
   const safeName = nomeSeguroParaUpload(filenameHeader);
-  const mime = contentType || 'application/octet-stream';
-  const audioFile = new File([raw], safeName, { type: mime });
-  return { audio: audioFile };
+  const safeMime = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(mimeHeader)
+    ? mimeHeader
+    : 'audio/mpeg';
+
+  return {
+    audio: new Blob([raw], { type: safeMime }),
+    fileName: safeName,
+    mimeType: safeMime,
+  };
 }
 
 async function refinarComSonnet(transcricao: string): Promise<string> {
@@ -77,7 +93,7 @@ async function refinarComSonnet(transcricao: string): Promise<string> {
 
 export async function POST(request: Request) {
   try {
-    const { audio, erro } = await extrairAudioDaRequisicao(request);
+    const { audio, fileName, mimeType, erro } = await extrairAudioDaRequisicao(request);
     if (!audio) {
       return NextResponse.json(
         { error: erro || 'Arquivo de áudio inválido.' },
@@ -94,8 +110,9 @@ export async function POST(request: Request) {
     }
 
     const payload = new FormData();
-    const filename = nomeSeguroParaUpload(audio.name);
-    payload.append('file', audio, filename);
+    const filename = fileName || nomeSeguroParaUpload('audio_upload.mp3');
+    const audioBlob = mimeType ? new Blob([audio], { type: mimeType }) : audio;
+    payload.append('file', audioBlob, filename);
     payload.append('model', 'whisper-large-v3-turbo');
     payload.append('language', 'es');
     payload.append('response_format', 'text');
