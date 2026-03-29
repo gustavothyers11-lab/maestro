@@ -248,12 +248,10 @@ function EtapaTranscricao({
     const nomeSeguro = `audio_upload.${extensaoPreferida}`;
 
     setStatusUpload('Enviando para transcrição...');
-    const req = fetch('/api/transcricao', {
+    const req = fetch(`/api/transcricao?ext=${extensaoPreferida}`, {
       method: 'POST',
       headers: {
         'Content-Type': tipoSeguro,
-        'X-Audio-Filename': nomeSeguro,
-        'X-Audio-Mime': blob.type || 'audio/mpeg',
       },
       body: bytes,
     });
@@ -340,7 +338,7 @@ function EtapaTranscricao({
       if (/load failed|failed to fetch|networkerror/i.test(mensagemBase)) {
         setErroUpload('Não foi possível carregar o FFmpeg no navegador. No iPhone/iPad, prefira enviar áudio (m4a/mp3/wav) ou tente no desktop para extrair áudio de vídeo.');
       } else if (/did not match the expected pattern/i.test(mensagemBase)) {
-        setErroUpload('O Safari iOS recusou o formato do upload. Tente gravar/exportar novamente em M4A ou WAV e reenviar.');
+        setErroUpload(`Safari iOS rejeitou o upload (${mensagemBase}). Tente novamente com áudio curto em .m4a.`);
       } else {
         setErroUpload(mensagemBase);
       }

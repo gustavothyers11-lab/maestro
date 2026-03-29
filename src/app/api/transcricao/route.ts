@@ -40,8 +40,16 @@ async function extrairAudioDaRequisicao(request: Request): Promise<{
     return { audio: null, erro: 'Corpo de áudio vazio.' };
   }
 
-  const filenameHeader = request.headers.get('x-audio-filename') || 'audio_upload.mp3';
-  const mimeHeader = request.headers.get('x-audio-mime') || 'audio/mpeg';
+  const url = new URL(request.url);
+  const ext = (url.searchParams.get('ext') || 'mp3').toLowerCase();
+  const extSeguro = ['mp3', 'm4a', 'wav'].includes(ext) ? ext : 'mp3';
+  const mimeByExt: Record<string, string> = {
+    mp3: 'audio/mpeg',
+    m4a: 'audio/mp4',
+    wav: 'audio/wav',
+  };
+  const mimeHeader = mimeByExt[extSeguro] || 'audio/mpeg';
+  const filenameHeader = `audio_upload.${extSeguro}`;
   const safeName = nomeSeguroParaUpload(filenameHeader);
   const safeMime = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(mimeHeader)
     ? mimeHeader
