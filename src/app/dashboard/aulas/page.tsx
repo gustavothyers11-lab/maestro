@@ -240,43 +240,38 @@ function EtapaTranscricao({
     setTamanhoMp3Mb(null);
   }, []);
 
-  const enviarParaTranscricao = useCallback(async (blob: Blob, extensaoPreferida: 'mp3' | 'm4a' | 'wav' = 'mp3') => {
+  const enviarParaTranscricao = useCallback(async (
+    blob: Blob,
+    extensaoPreferida: 'mp3' | 'm4a' | 'wav' = 'mp3',
+    usarBase64Direto = false,
+  ) => {
     // Em iOS/Safari, multipart/FormData pode quebrar com DOMException de pattern.
     // Enviamos bytes puros para a API, junto com metadados em headers.
     const bytes = await blob.arrayBuffer();
     const tipoSeguro = 'application/octet-stream';
 
-    const bytesToBase64 = (ab: ArrayBuffer): string => {
-      const arr = new Uint8Array(ab);
-      const chunkSize = 0x8000;
-      let binary = '';
-      for (let i = 0; i < arr.length; i += chunkSize) {
-        const chunk = arr.subarray(i, i + chunkSize);
-        binary += String.fromCharCode(...chunk);
-      }
-      return btoa(binary);
+    const blobToBase64 = async (value: Blob): Promise<string> => {
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = typeof reader.result === 'string' ? reader.result : '';
+          const comma = result.indexOf(',');
+          if (comma === -1) {
+            reject(new Error('Falha ao converter áudio para base64.'));
+            return;
+          }
+          resolve(result.slice(comma + 1));
+        };
+        reader.onerror = () => reject(new Error('Falha ao ler arquivo de áudio no navegador.'));
+        reader.readAsDataURL(value);
+      });
     };
 
     setStatusUpload('Enviando para transcrição...');
     let res: Response;
-    try {
-      const req = fetch('/api/transcricao', {
-        method: 'POST',
-        headers: {
-          'Content-Type': tipoSeguro,
-        },
-        body: bytes,
-      });
-
-      setStatusUpload('Transcrevendo com Groq Whisper...');
-      res = await req;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (!/did not match the expected pattern/i.test(msg)) throw e;
-
-      // Fallback iOS: envia em JSON base64 para evitar erro interno do WebKit no upload direto.
+    if (usarBase64Direto) {
       const payload = {
-        audioBase64: bytesToBase64(bytes),
+        audioBase64: await blobToBase64(blob),
         ext: extensaoPreferida,
         mime: blob.type || 'audio/mpeg',
       };
@@ -291,6 +286,40 @@ function EtapaTranscricao({
 
       setStatusUpload('Transcrevendo com Groq Whisper...');
       res = await reqFallback;
+    } else {
+      try {
+      const req = fetch('/api/transcricao', {
+        method: 'POST',
+        headers: {
+          'Content-Type': tipoSeguro,
+        },
+        body: bytes,
+      });
+
+      setStatusUpload('Transcrevendo com Groq Whisper...');
+      res = await req;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!/did not match the expected pattern/i.test(msg)) throw e;
+
+        // Fallback: envia em JSON base64 para evitar erro interno do WebKit no upload direto.
+        const payload = {
+          audioBase64: await blobToBase64(blob),
+          ext: extensaoPreferida,
+          mime: blob.type || 'audio/mpeg',
+        };
+
+        const reqFallback = fetch('/api/transcricao', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+
+        setStatusUpload('Transcrevendo com Groq Whisper...');
+        res = await reqFallback;
+      }
     }
 
     const payload = await res.json();
@@ -335,7 +364,7 @@ function EtapaTranscricao({
         setStatusUpload('Preparando áudio...');
         setTamanhoMp3Mb(arquivoMidia.size / (1024 * 1024));
         const extPreferida: 'mp3' | 'm4a' | 'wav' = ext === '.wav' ? 'wav' : ext === '.m4a' ? 'm4a' : 'mp3';
-        await enviarParaTranscricao(arquivoMidia, extPreferida);
+        await enviarParaTranscricao(arquivoMidia, extPreferida, isIOS);
         setStatusUpload('');
         return;
       }
