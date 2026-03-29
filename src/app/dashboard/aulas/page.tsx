@@ -251,20 +251,17 @@ function EtapaTranscricao({
     const tipoSeguro = 'application/octet-stream';
 
     const blobToBase64 = async (value: Blob): Promise<string> => {
-      return await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = typeof reader.result === 'string' ? reader.result : '';
-          const comma = result.indexOf(',');
-          if (comma === -1) {
-            reject(new Error('Falha ao converter áudio para base64.'));
-            return;
-          }
-          resolve(result.slice(comma + 1));
-        };
-        reader.onerror = () => reject(new Error('Falha ao ler arquivo de áudio no navegador.'));
-        reader.readAsDataURL(value);
-      });
+      const buffer = await value.arrayBuffer();
+      const bytesArr = new Uint8Array(buffer);
+      const chunkSize = 0x8000;
+      let binary = '';
+
+      for (let i = 0; i < bytesArr.length; i += chunkSize) {
+        const chunk = bytesArr.subarray(i, i + chunkSize);
+        binary += String.fromCharCode(...chunk);
+      }
+
+      return btoa(binary);
     };
 
     setStatusUpload('Enviando para transcrição...');
@@ -402,7 +399,7 @@ function EtapaTranscricao({
       if (/load failed|failed to fetch|networkerror/i.test(mensagemBase)) {
         setErroUpload('Não foi possível carregar o FFmpeg no navegador. No iPhone/iPad, prefira enviar áudio (m4a/mp3/wav) ou tente no desktop para extrair áudio de vídeo.');
       } else if (/did not match the expected pattern/i.test(mensagemBase)) {
-        setErroUpload(`Safari iOS rejeitou o upload (${mensagemBase}). Tente novamente com áudio curto em .m4a.`);
+        setErroUpload(`Safari iOS rejeitou o upload (${mensagemBase}). Etapa: envio/transcrição.`);
       } else {
         setErroUpload(mensagemBase);
       }
