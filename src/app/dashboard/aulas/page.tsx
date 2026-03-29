@@ -245,10 +245,9 @@ function EtapaTranscricao({
     // Enviamos bytes puros para a API, junto com metadados em headers.
     const bytes = await blob.arrayBuffer();
     const tipoSeguro = 'application/octet-stream';
-    const nomeSeguro = `audio_upload.${extensaoPreferida}`;
 
     setStatusUpload('Enviando para transcrição...');
-    const req = fetch(`/api/transcricao?ext=${extensaoPreferida}`, {
+    const req = fetch('/api/transcricao', {
       method: 'POST',
       headers: {
         'Content-Type': tipoSeguro,

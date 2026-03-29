@@ -12,6 +12,30 @@ function nomeSeguroParaUpload(nomeOriginal: string | undefined): string {
   return `${base}.mp3`;
 }
 
+function detectarFormatoAudio(bytes: Uint8Array): { ext: 'wav' | 'mp3' | 'm4a' | 'bin'; mime: string } {
+  if (bytes.length >= 12) {
+    // WAV: RIFF....WAVE
+    const riff = String.fromCharCode(...bytes.slice(0, 4));
+    const wave = String.fromCharCode(...bytes.slice(8, 12));
+    if (riff === 'RIFF' && wave === 'WAVE') return { ext: 'wav', mime: 'audio/wav' };
+
+    // M4A/MP4: ....ftyp
+    const ftyp = String.fromCharCode(...bytes.slice(4, 8));
+    if (ftyp === 'ftyp') return { ext: 'm4a', mime: 'audio/mp4' };
+  }
+
+  // MP3: ID3 header ou frame sync 0xFFEx
+  if (bytes.length >= 3) {
+    const id3 = String.fromCharCode(...bytes.slice(0, 3));
+    if (id3 === 'ID3') return { ext: 'mp3', mime: 'audio/mpeg' };
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) {
+    return { ext: 'mp3', mime: 'audio/mpeg' };
+  }
+
+  return { ext: 'bin', mime: 'application/octet-stream' };
+}
+
 async function extrairAudioDaRequisicao(request: Request): Promise<{
   audio: Blob | null;
   fileName?: string;
@@ -40,20 +64,10 @@ async function extrairAudioDaRequisicao(request: Request): Promise<{
     return { audio: null, erro: 'Corpo de áudio vazio.' };
   }
 
-  const url = new URL(request.url);
-  const ext = (url.searchParams.get('ext') || 'mp3').toLowerCase();
-  const extSeguro = ['mp3', 'm4a', 'wav'].includes(ext) ? ext : 'mp3';
-  const mimeByExt: Record<string, string> = {
-    mp3: 'audio/mpeg',
-    m4a: 'audio/mp4',
-    wav: 'audio/wav',
-  };
-  const mimeHeader = mimeByExt[extSeguro] || 'audio/mpeg';
-  const filenameHeader = `audio_upload.${extSeguro}`;
-  const safeName = nomeSeguroParaUpload(filenameHeader);
-  const safeMime = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(mimeHeader)
-    ? mimeHeader
-    : 'audio/mpeg';
+  const bytes = new Uint8Array(raw);
+  const detectado = detectarFormatoAudio(bytes);
+  const safeName = nomeSeguroParaUpload(`audio_upload.${detectado.ext}`);
+  const safeMime = detectado.mime;
 
   return {
     audio: new Blob([raw], { type: safeMime }),
