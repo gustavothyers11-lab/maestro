@@ -61,6 +61,16 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    label: 'Materiais',
+    href: '/dashboard/materiais',
+    mobile: false,
+    icon: (
+      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.66V18.75a2.25 2.25 0 002.25 2.25H18a2.25 2.25 0 002.25-2.25V6.75a48.554 48.554 0 00-3-8.75m0 0V4.5M3 15a48.694 48.694 0 0115.838-.856" />
+      </svg>
+    ),
+  },
+  {
     label: 'Praticar',
     href: '/dashboard/praticar',
     mobile: true,
