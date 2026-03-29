@@ -229,8 +229,17 @@ function EtapaTranscricao({
 
       setStatusUpload('Comprimindo áudio...');
       const audioData = await ffmpeg.readFile(outputName);
-      const mp3Bytes = audioData instanceof Uint8Array ? audioData : new Uint8Array(audioData as ArrayBuffer);
-      const mp3Blob = new Blob([mp3Bytes], { type: 'audio/mpeg' });
+      let mp3Bytes: Uint8Array;
+      
+      if (typeof audioData === 'string') {
+        mp3Bytes = new TextEncoder().encode(audioData);
+      } else if (audioData instanceof Uint8Array) {
+        mp3Bytes = new Uint8Array(audioData);
+      } else {
+        mp3Bytes = new Uint8Array(audioData as ArrayBuffer);
+      }
+
+      const mp3Blob = new Blob([mp3Bytes] as any[], { type: 'audio/mpeg' });
       const mp3SizeMb = mp3Blob.size / (1024 * 1024);
       setTamanhoMp3Mb(mp3SizeMb);
 
