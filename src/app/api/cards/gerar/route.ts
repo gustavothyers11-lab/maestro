@@ -1,4 +1,4 @@
-// API de geração de cards — Sonnet como provedor principal com fallback para Groq
+// API de geração de cards — Sonnet como único provedor
 
 import { NextResponse } from 'next/server';
 import type { Genero } from '@/types';
@@ -21,7 +21,7 @@ interface CardGerado {
   tema: string;
 }
 
-interface GroqResponse {
+interface CardGenerationResponse {
   cards: CardGerado[];
   resumo: string;
 }
@@ -70,11 +70,11 @@ async function gerarComSonnet(params: {
   transcricao: string;
   quantidade: number;
   temas?: string[];
-}): Promise<GroqResponse> {
+}): Promise<CardGenerationResponse> {
   const { apiKey, transcricao, quantidade, temas } = params;
   const { systemPrompt, userPrompt } = construirPrompts(transcricao, quantidade, temas);
 
-  const model = process.env.ANTHROPIC_SONNET_MODEL || 'claude-3-5-sonnet-latest';
+  const model = process.env.ANTHROPIC_SONNET_MODEL || 'claude-sonnet-4-20250514';
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -104,43 +104,7 @@ async function gerarComSonnet(params: {
     .join('\n')
     .trim();
 
-  return JSON.parse(limparJsonCru(raw)) as GroqResponse;
-}
-
-async function gerarComGroq(params: {
-  apiKey: string;
-  transcricao: string;
-  quantidade: number;
-  temas?: string[];
-}): Promise<GroqResponse> {
-  const { apiKey, transcricao, quantidade, temas } = params;
-  const { systemPrompt, userPrompt } = construirPrompts(transcricao, quantidade, temas);
-
-  const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.4,
-      response_format: { type: 'json_object' },
-    }),
-  });
-
-  if (!groqRes.ok) {
-    const detail = await groqRes.text().catch(() => 'sem detalhes');
-    throw new Error(`Erro da API Groq (${groqRes.status}): ${detail}`);
-  }
-
-  const groqJson = (await groqRes.json()) as { choices?: { message?: { content?: string } }[] };
-  const raw = groqJson.choices?.[0]?.message?.content ?? '';
-  return JSON.parse(limparJsonCru(raw)) as GroqResponse;
+  return JSON.parse(limparJsonCru(raw)) as CardGenerationResponse;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,11 +113,10 @@ async function gerarComGroq(params: {
 
 export async function POST(request: Request) {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  const groqKey = process.env.GROQ_API_KEY;
 
-  if (!anthropicKey && !groqKey) {
+  if (!anthropicKey) {
     return NextResponse.json(
-      { error: 'Configure ANTHROPIC_API_KEY ou GROQ_API_KEY no servidor.' },
+      { error: 'Configure ANTHROPIC_API_KEY no servidor.' },
       { status: 500 },
     );
   }
@@ -187,33 +150,14 @@ export async function POST(request: Request) {
     );
   }
 
-  let parsed: GroqResponse;
+  let parsed: CardGenerationResponse;
   try {
-    if (anthropicKey) {
-      parsed = await gerarComSonnet({ apiKey: anthropicKey, transcricao, quantidade, temas });
-    } else if (groqKey) {
-      parsed = await gerarComGroq({ apiKey: groqKey, transcricao, quantidade, temas });
-    } else {
-      throw new Error('Nenhum provedor de IA configurado.');
-    }
+    parsed = await gerarComSonnet({ apiKey: anthropicKey, transcricao, quantidade, temas });
   } catch (erroPrimario) {
-    if (!groqKey || !anthropicKey) {
-      return NextResponse.json(
-        { error: erroPrimario instanceof Error ? erroPrimario.message : 'Falha na geração com IA.' },
-        { status: 502 },
-      );
-    }
-
-    try {
-      parsed = await gerarComGroq({ apiKey: groqKey, transcricao, quantidade, temas });
-    } catch (erroFallback) {
-      const msg1 = erroPrimario instanceof Error ? erroPrimario.message : 'Falha no Sonnet.';
-      const msg2 = erroFallback instanceof Error ? erroFallback.message : 'Falha no fallback Groq.';
-      return NextResponse.json(
-        { error: `Falha ao gerar cards. Sonnet: ${msg1} | Groq: ${msg2}` },
-        { status: 502 },
-      );
-    }
+    return NextResponse.json(
+      { error: erroPrimario instanceof Error ? erroPrimario.message : 'Falha na geração com IA.' },
+      { status: 502 },
+    );
   }
 
   if (!Array.isArray(parsed.cards) || parsed.cards.length === 0) {

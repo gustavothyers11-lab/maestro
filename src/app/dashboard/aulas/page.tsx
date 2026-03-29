@@ -4,12 +4,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
-import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 import Card from '@/components/ui/Card';
 import ProgressBar from '@/components/ui/ProgressBar';
-import type { Genero } from '@/types';
+import type { CategoriaAula, Genero } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -34,6 +34,13 @@ type Etapa = 1 | 2 | 3;
 type Direcao = 'next' | 'prev';
 
 const TEMAS_DISPONIVEIS = ['Vocabulário', 'Verbos', 'Frases', 'Gírias', 'Expressões'] as const;
+const CATEGORIAS_AULA: Array<{ value: CategoriaAula; label: string; descricao: string }> = [
+  { value: 'geral', label: 'Geral', descricao: 'Conteúdo misto com visão ampla da aula.' },
+  { value: 'gramatica', label: 'Gramática', descricao: 'Regras, estruturas e uso correto.' },
+  { value: 'vocabulario', label: 'Vocabulário', descricao: 'Palavras, expressões e temas.' },
+  { value: 'conversacao', label: 'Conversação', descricao: 'Diálogos e situações de fala.' },
+  { value: 'pronuncia', label: 'Pronúncia', descricao: 'Ativa a aba de pronúncia na aula.' },
+];
 const ACCEPTED_MEDIA = '.mp4,.mov,.avi,.mkv,.webm,.m4a,.mp3,.wav';
 
 let ffmpegInstance: FFmpeg | null = null;
@@ -165,8 +172,8 @@ function GerandoSpinner() {
         <span className="absolute inset-0 flex items-center justify-center text-2xl">🤖</span>
       </div>
       <div className="text-center space-y-1">
-        <p className="text-sm font-bold text-gray-700 dark:text-white/80">Grok está analisando a transcrição…</p>
-        <p className="text-xs text-gray-400 dark:text-white/40">Gerando flashcards de alta qualidade</p>
+        <p className="text-sm font-bold text-gray-700 dark:text-white/80">Sonnet está analisando a transcrição…</p>
+        <p className="text-xs text-gray-400 dark:text-white/40">Gerando flashcards e estrutura da aula</p>
       </div>
       {/* Barras de "onda" animadas */}
       <div className="flex items-end gap-1 h-5">
@@ -192,6 +199,8 @@ function GerandoSpinner() {
 function EtapaTranscricao({
   titulo,
   setTitulo,
+  categoria,
+  setCategoria,
   transcricao,
   setTranscricao,
   quantidade,
@@ -207,6 +216,8 @@ function EtapaTranscricao({
 }: {
   titulo: string;
   setTitulo: (v: string) => void;
+  categoria: CategoriaAula;
+  setCategoria: (v: CategoriaAula) => void;
   transcricao: string;
   setTranscricao: (v: string) => void;
   quantidade: number;
@@ -241,43 +252,43 @@ function EtapaTranscricao({
     setTamanhoMp3Mb(null);
   }, []);
 
-  // Abordagem iOS: faz upload direto para Supabase Storage (PUT simples),
-  // depois envia só a URL para o servidor transcrever — evita qualquer
-  // manipulação de bytes/FormData no WebKit que causava DOMException.
+  // Abordagem iOS: pede uma signed upload URL ao servidor (sem RLS),
+  // faz um PUT puro com o File como body (nenhum FormData/ArrayBuffer no JS),
+  // depois o servidor baixa e transcreve — evita DOMException do WebKit.
   const transcreverViaStorage = useCallback(async (
     file: File,
     extensaoPreferida: 'mp3' | 'm4a' | 'wav' = 'mp3',
   ) => {
-    const supabase = createSupabaseClient();
-
-    const nomeUnico = `${Date.now()}-${Math.random().toString(36).slice(2)}.${extensaoPreferida}`;
-    const storagePath = `temp/${nomeUnico}`;
-
-    setStatusUpload('Enviando áudio...');
-    const { error: uploadError } = await supabase.storage
-      .from('audio-temp')
-      .upload(storagePath, file, {
-        contentType: file.type || 'audio/mpeg',
-        upsert: false,
-      });
-
-    if (uploadError) {
-      throw new Error(`Erro ao enviar para storage: ${uploadError.message}`);
+    // 1. Obter signed upload URL do nosso servidor
+    setStatusUpload('Preparando upload seguro...');
+    const urlRes = await fetch('/api/transcricao/upload-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ext: extensaoPreferida }),
+    });
+    const urlData = await urlRes.json() as { signedUrl?: string; path?: string; error?: string };
+    if (!urlRes.ok || !urlData.signedUrl || !urlData.path) {
+      throw new Error(urlData.error || 'Não foi possível iniciar o upload.');
     }
 
-    const { data: urlData } = supabase.storage.from('audio-temp').getPublicUrl(storagePath);
-    const publicUrl = urlData?.publicUrl;
-    if (!publicUrl) throw new Error('Não foi possível obter URL do áudio enviado.');
+    // 2. PUT puro — body é o File diretamente, WebKit lida nativamente
+    setStatusUpload('Enviando áudio...');
+    const putRes = await fetch(urlData.signedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type || 'audio/mpeg' },
+      body: file,
+    });
+    if (!putRes.ok) {
+      throw new Error(`Erro ao enviar áudio (${putRes.status}).`);
+    }
 
-    setStatusUpload('Transcrevendo com Groq Whisper...');
+    // 3. Servidor transcreve a partir do path no storage
+    setStatusUpload('Transcrevendo áudio...');
     const res = await fetch('/api/transcricao', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ storageUrl: publicUrl, ext: extensaoPreferida }),
+      body: JSON.stringify({ storagePath: urlData.path, ext: extensaoPreferida }),
     });
-
-    // Limpar arquivo temporário (best-effort, não bloqueia)
-    supabase.storage.from('audio-temp').remove([storagePath]).catch(() => undefined);
 
     const payload = await res.json();
     if (!res.ok) throw new Error(payload.error || `Erro ${res.status} ao transcrever.`);
@@ -300,7 +311,7 @@ function EtapaTranscricao({
       body: await blob.arrayBuffer(),
     });
 
-    setStatusUpload('Transcrevendo com Groq Whisper...');
+    setStatusUpload('Transcrevendo áudio...');
     const payload = await res.json();
     if (!res.ok) throw new Error(payload.error || `Erro ${res.status} ao transcrever.`);
 
@@ -410,6 +421,36 @@ function EtapaTranscricao({
             hover:border-gray-400 dark:hover:border-white/20
           "
         />
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-white/50">
+          Categoria da aula
+        </label>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {CATEGORIAS_AULA.map((opcao) => {
+            const ativa = categoria === opcao.value;
+            return (
+              <button
+                key={opcao.value}
+                type="button"
+                onClick={() => setCategoria(opcao.value)}
+                className={`rounded-xl border px-4 py-3 text-left transition-all duration-200 ${
+                  ativa
+                    ? 'border-cyan/50 bg-cyan/10 shadow-[0_0_12px_rgba(10,191,222,0.14)]'
+                    : 'border-gray-300 dark:border-white/10 bg-white dark:bg-white/5 hover:border-gray-400 dark:hover:border-white/20'
+                }`}
+              >
+                <p className={`text-sm font-bold ${ativa ? 'text-cyan' : 'text-gray-800 dark:text-white/80'}`}>
+                  {opcao.label}
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-gray-500 dark:text-white/40">
+                  {opcao.descricao}
+                </p>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Upload opcional de vídeo/áudio */}
@@ -709,7 +750,7 @@ function EtapaTranscricao({
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
           </svg>
-          Gerar Cards com IA
+          Gerar Cards com Sonnet
         </span>
       </button>
     </div>
@@ -756,7 +797,7 @@ function EtapaResumo({
         </div>
         <div className="rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 p-4 text-center">
           <p className="text-2xl font-extrabold text-amber-400">🤖</p>
-          <p className="text-[11px] text-gray-500 dark:text-white/45 mt-1">Via Grok AI</p>
+          <p className="text-[11px] text-gray-500 dark:text-white/45 mt-1">Via Claude Sonnet</p>
         </div>
       </div>
 
@@ -1042,11 +1083,13 @@ function EtapaRevisao({
 // ---------------------------------------------------------------------------
 
 export default function AulasPage() {
+  const router = useRouter();
   const [etapa, setEtapa] = useState<Etapa>(1);
   const [direcao, setDirecao] = useState<Direcao>('next');
 
   // Etapa 1
   const [titulo, setTitulo] = useState('');
+  const [categoria, setCategoria] = useState<CategoriaAula>('geral');
   const [transcricao, setTranscricao] = useState('');
   const [quantidade, setQuantidade] = useState(10);
   const [temasSelecionados, setTemasSelecionados] = useState<string[]>([]);
@@ -1161,6 +1204,25 @@ export default function AulasPage() {
     setSalvando(true);
     setErro('');
     try {
+      const aulaRes = await fetch('/api/aulas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          titulo,
+          categoria,
+          transcricao,
+          resumo,
+          status: 'concluida',
+        }),
+      });
+
+      const aulaData = await aulaRes.json().catch(() => ({}));
+      if (!aulaRes.ok || !aulaData.aula?.id) {
+        throw new Error(aulaData.error || `Erro ${aulaRes.status} ao criar aula.`);
+      }
+
+      const aulaId = aulaData.aula.id as string;
+
       const res = await fetch('/api/cards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1171,6 +1233,7 @@ export default function AulasPage() {
             genero: c.genero,
             notas: c.exemplo || null,
             baralhoId: baralhoId || undefined,
+            aulaId,
           })),
         }),
       });
@@ -1179,18 +1242,20 @@ export default function AulasPage() {
         throw new Error(data.error || `Erro ${res.status}`);
       }
       setSalvoOk(true);
+      router.push(`/dashboard/aulas/${aulaId}`);
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao salvar cards.');
     } finally {
       setSalvando(false);
     }
-  }, [baralhoId]);
+  }, [baralhoId, categoria, resumo, router, titulo, transcricao]);
 
   /* ── Resetar todo o fluxo ────────────────────────────────────────── */
   const resetar = useCallback(() => {
     setEtapa(1);
     setDirecao('next');
     setTitulo('');
+    setCategoria('geral');
     setTranscricao('');
     setQuantidade(10);
     setTemasSelecionados([]);
@@ -1288,6 +1353,8 @@ export default function AulasPage() {
                   <EtapaTranscricao
                     titulo={titulo}
                     setTitulo={setTitulo}
+                    categoria={categoria}
+                    setCategoria={setCategoria}
                     transcricao={transcricao}
                     setTranscricao={setTranscricao}
                     quantidade={quantidade}

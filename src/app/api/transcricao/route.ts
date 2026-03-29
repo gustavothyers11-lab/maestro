@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
 export const maxDuration = 60;
 
 interface JsonAudioPayload {
   storageUrl?: string;
+  storagePath?: string;
   audioBase64?: string;
   ext?: string;
   mime?: string;
@@ -126,25 +128,41 @@ async function extrairAudioDaRequisicao(request: Request): Promise<{
       return { audio: null, erro: 'JSON inválido no upload de áudio.' };
     }
 
-    // Nova abordagem: URL do Supabase Storage (iOS)
-    if (typeof body.storageUrl === 'string' && body.storageUrl.length > 0) {
+    // Abordagem via Supabase Storage (iOS) — path após upload direto com signed URL
+    const rawStoragePath = body.storagePath || body.storageUrl || null;
+    if (typeof rawStoragePath === 'string' && rawStoragePath.length > 0) {
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-      if (!supabaseUrl || !body.storageUrl.startsWith(supabaseUrl)) {
-        return { audio: null, erro: 'URL de storage inválida.' };
+      const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+      let raw: Uint8Array;
+
+      if (serviceRole) {
+        // Baixa via service role (path no bucket audio-temp)
+        const supabaseAdmin = createClient(supabaseUrl, serviceRole);
+        // storagePath pode ser 'temp/xxx.mp3' ou URL pública completa
+        const path = rawStoragePath.startsWith('http')
+          ? rawStoragePath.replace(`${supabaseUrl}/storage/v1/object/public/audio-temp/`, '')
+          : rawStoragePath;
+        const { data, error } = await supabaseAdmin.storage.from('audio-temp').download(path);
+        if (error || !data) {
+          return { audio: null, erro: `Erro ao baixar áudio do storage: ${error?.message ?? 'sem dados'}` };
+        }
+        raw = new Uint8Array(await data.arrayBuffer());
+        // Limpar após download (best-effort)
+        supabaseAdmin.storage.from('audio-temp').remove([path]).catch(() => undefined);
+      } else {
+        // Sem service role: tenta baixar via URL pública
+        if (!rawStoragePath.startsWith(supabaseUrl)) {
+          return { audio: null, erro: 'URL de storage inválida.' };
+        }
+        let downloadRes: Response;
+        try { downloadRes = await fetch(rawStoragePath); } catch {
+          return { audio: null, erro: 'Não foi possível baixar o áudio do storage.' };
+        }
+        if (!downloadRes.ok) return { audio: null, erro: `Erro ao baixar áudio (${downloadRes.status}).` };
+        raw = new Uint8Array(await downloadRes.arrayBuffer());
       }
 
-      let downloadRes: Response;
-      try {
-        downloadRes = await fetch(body.storageUrl);
-      } catch {
-        return { audio: null, erro: 'Não foi possível baixar o áudio do storage.' };
-      }
-
-      if (!downloadRes.ok) {
-        return { audio: null, erro: `Erro ao baixar áudio do storage (${downloadRes.status}).` };
-      }
-
-      const raw = new Uint8Array(await downloadRes.arrayBuffer());
       if (raw.byteLength === 0) return { audio: null, erro: 'Arquivo de áudio vazio no storage.' };
 
       const detectado = detectarFormatoAudio(raw);
@@ -153,7 +171,7 @@ async function extrairAudioDaRequisicao(request: Request): Promise<{
       const safeMime = detectado.ext !== 'bin' ? detectado.mime : (extFinal === 'wav' ? 'audio/wav' : extFinal === 'm4a' ? 'audio/mp4' : 'audio/mpeg');
 
       return {
-        audio: new Blob([raw], { type: safeMime }),
+        audio: new Blob([raw as unknown as BlobPart], { type: safeMime }),
         fileName: nomeSeguroParaUpload(`audio_upload.${extFinal}`),
         mimeType: safeMime,
       };
@@ -217,7 +235,7 @@ async function extrairAudioDaRequisicao(request: Request): Promise<{
   const safeMime = detectado.mime;
 
   return {
-    audio: new Blob([raw], { type: safeMime }),
+    audio: new Blob([raw as unknown as BlobPart], { type: safeMime }),
     fileName: safeName,
     mimeType: safeMime,
   };

@@ -6,6 +6,8 @@ export type Genero = 'masculino' | 'feminino' | 'neutro';
 /** Status de andamento de uma aula */
 export type StatusAula = 'pendente' | 'em_progresso' | 'concluida';
 
+export type CategoriaAula = 'geral' | 'gramatica' | 'vocabulario' | 'conversacao' | 'pronuncia';
+
 /** Resultado de uma revisão de cartão (auto-avaliação do usuário) */
 export type ResultadoRevisao = 'errei' | 'dificil' | 'bom' | 'facil';
 
@@ -47,6 +49,32 @@ export interface Aula {
   criadoEm: string;
   totalCards: number;
   cardsDominados: number;
+  categoria?: CategoriaAula;
+  transcricao?: string;
+  resumo?: string;
+  materiais?: MaterialAula[];
+  pronuncia?: PronunciaAula | null;
+}
+
+export interface MaterialAula {
+  id: string;
+  titulo: string;
+  tipo: 'pdf' | 'link' | 'audio' | 'video' | 'doc';
+  url: string;
+  observacao?: string | null;
+  criadoEm: string;
+}
+
+export interface ItemPronuncia {
+  palavra: string;
+  pronuncia: string;
+  significado: string;
+  exemplo: string;
+}
+
+export interface PronunciaAula {
+  itens: ItemPronuncia[];
+  geradoEm: string;
 }
 
 /** Registro de progresso de uma revisão individual */
