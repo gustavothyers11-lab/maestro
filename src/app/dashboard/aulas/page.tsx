@@ -43,17 +43,22 @@ async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpegLoadPromise) return ffmpegLoadPromise;
 
   ffmpegLoadPromise = (async () => {
-    const ffmpeg = new FFmpeg();
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
+    try {
+      const ffmpeg = new FFmpeg();
+      const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.15/dist/esm';
 
-    await ffmpeg.load({
-      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-      workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
-    });
+      await ffmpeg.load({
+        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+        workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
+      });
 
-    ffmpegInstance = ffmpeg;
-    return ffmpeg;
+      ffmpegInstance = ffmpeg;
+      return ffmpeg;
+    } catch (e) {
+      ffmpegLoadPromise = null;
+      throw e instanceof Error ? e : new Error(`Erro ao carregar FFmpeg: ${e}`);
+    }
   })();
 
   return ffmpegLoadPromise;
