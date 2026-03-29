@@ -56,28 +56,56 @@ async function chamarGroqTranscricao(params: {
 }): Promise<GroqTranscricaoResult> {
   const { apiKey, bytes, fileName, mimeType } = params;
 
-  const payload = new FormData();
-  const file = new File([new Uint8Array(bytes)] as any[], fileName, { type: mimeType });
+  const tentativasPayload: Array<{ model: string; language?: string; response_format?: string }> = [
+    { model: 'whisper-large-v3-turbo', language: 'es', response_format: 'text' },
+    { model: 'whisper-large-v3-turbo', response_format: 'text' },
+    { model: 'whisper-large-v3', language: 'es', response_format: 'text' },
+    { model: 'whisper-large-v3', response_format: 'text' },
+    { model: 'whisper-large-v3-turbo' },
+    { model: 'whisper-large-v3' },
+  ];
 
-  payload.append('file', file, fileName);
-  payload.append('model', 'whisper-large-v3-turbo');
-  payload.append('language', 'es');
-  payload.append('response_format', 'text');
-
-  const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: payload,
-  });
-
-  const texto = (await groqRes.text()).trim();
-  return {
-    ok: groqRes.ok,
-    status: groqRes.status,
-    texto,
+  let ultimo: GroqTranscricaoResult = {
+    ok: false,
+    status: 502,
+    texto: 'Falha ao transcrever com Groq Whisper.',
   };
+
+  for (const t of tentativasPayload) {
+    const payload = new FormData();
+    const file = new File([new Uint8Array(bytes)] as any[], fileName, { type: mimeType });
+
+    payload.append('file', file, fileName);
+    payload.append('model', t.model);
+    if (t.language) payload.append('language', t.language);
+    if (t.response_format) payload.append('response_format', t.response_format);
+
+    const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: payload,
+    });
+
+    const texto = (await groqRes.text()).trim();
+    ultimo = {
+      ok: groqRes.ok,
+      status: groqRes.status,
+      texto,
+    };
+
+    if (groqRes.ok) {
+      return ultimo;
+    }
+
+    // Erros que não são de pattern provavelmente não vão melhorar com outra combinação.
+    if (!/expected pattern|did not match the expected pattern/i.test(texto)) {
+      return ultimo;
+    }
+  }
+
+  return ultimo;
 }
 
 async function extrairAudioDaRequisicao(request: Request): Promise<{
