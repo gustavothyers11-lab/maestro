@@ -12,6 +12,32 @@ function nomeSeguroParaUpload(nomeOriginal: string | undefined): string {
   return `${base}.mp3`;
 }
 
+async function extrairAudioDaRequisicao(request: Request): Promise<{ audio: File | null; erro?: string }> {
+  const contentType = request.headers.get('content-type') || '';
+
+  // Caminho tradicional multipart/form-data
+  if (contentType.includes('multipart/form-data')) {
+    const formData = await request.formData();
+    const audioField = formData.get('audio');
+    if (!(audioField instanceof File)) {
+      return { audio: null, erro: 'Arquivo de áudio não enviado no campo "audio".' };
+    }
+    return { audio: audioField };
+  }
+
+  // Caminho iOS-safe: bytes puros no body
+  const raw = await request.arrayBuffer();
+  if (!raw || raw.byteLength === 0) {
+    return { audio: null, erro: 'Corpo de áudio vazio.' };
+  }
+
+  const filenameHeader = request.headers.get('x-audio-filename') || 'audio_upload.mp3';
+  const safeName = nomeSeguroParaUpload(filenameHeader);
+  const mime = contentType || 'application/octet-stream';
+  const audioFile = new File([raw], safeName, { type: mime });
+  return { audio: audioFile };
+}
+
 async function refinarComSonnet(transcricao: string): Promise<string> {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (!anthropicKey || !transcricao.trim()) return transcricao;
@@ -51,12 +77,10 @@ async function refinarComSonnet(transcricao: string): Promise<string> {
 
 export async function POST(request: Request) {
   try {
-    const formData = await request.formData();
-    const audio = formData.get('audio');
-
-    if (!(audio instanceof File)) {
+    const { audio, erro } = await extrairAudioDaRequisicao(request);
+    if (!audio) {
       return NextResponse.json(
-        { error: 'Arquivo de áudio não enviado no campo "audio".' },
+        { error: erro || 'Arquivo de áudio inválido.' },
         { status: 400 },
       );
     }

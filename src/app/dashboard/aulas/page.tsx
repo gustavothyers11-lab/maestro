@@ -241,19 +241,20 @@ function EtapaTranscricao({
   }, []);
 
   const enviarParaTranscricao = useCallback(async (blob: Blob, extensaoPreferida: 'mp3' | 'm4a' | 'wav' = 'mp3') => {
-    const formData = new FormData();
-
-    // Normaliza o conteúdo para evitar DOMException de pattern em iOS/WebKit.
+    // Em iOS/Safari, multipart/FormData pode quebrar com DOMException de pattern.
+    // Enviamos bytes puros para a API, junto com metadados em headers.
     const bytes = await blob.arrayBuffer();
-    const tipoSeguro = blob.type && blob.type.startsWith('audio/') ? blob.type : 'audio/mpeg';
-    const blobSeguro = new Blob([bytes], { type: tipoSeguro });
+    const tipoSeguro = blob.type && blob.type.startsWith('audio/') ? blob.type : 'application/octet-stream';
     const nomeSeguro = `audio_upload.${extensaoPreferida}`;
-    formData.append('audio', blobSeguro, nomeSeguro);
 
     setStatusUpload('Enviando para transcrição...');
     const req = fetch('/api/transcricao', {
       method: 'POST',
-      body: formData,
+      headers: {
+        'Content-Type': tipoSeguro,
+        'X-Audio-Filename': nomeSeguro,
+      },
+      body: bytes,
     });
 
     setStatusUpload('Transcrevendo com Groq Whisper...');
