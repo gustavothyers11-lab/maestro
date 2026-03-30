@@ -100,91 +100,96 @@ async function getFFmpeg(): Promise<FFmpeg> {
 }
 
 // ---------------------------------------------------------------------------
-// Limite Groq Whisper: 25 MB. Usamos 20 MB como margem segura.
+// Limite de body do Vercel: 4.5 MB. Usamos 4 MB como margem segura.
 // ---------------------------------------------------------------------------
-const MAX_CHUNK_BYTES = 20 * 1024 * 1024;
+const MAX_CHUNK_BYTES = 4 * 1024 * 1024;
 
-/** Monta um Blob WAV (PCM 16-bit, mono) a partir de Float32Array de amostras. */
-function criarWavBlob(pcm: Float32Array, sampleRate: number): Blob {
-  const bytesPerSample = 2;
-  const dataSize = pcm.length * bytesPerSample;
-  const buf = new ArrayBuffer(44 + dataSize);
-  const v = new DataView(buf);
+/**
+ * Cria um header WAV de 44 bytes para dados PCM já existentes.
+ */
+function criarWavHeader(
+  dataSize: number,
+  sampleRate: number,
+  channels: number,
+  bitsPerSample: number,
+): Uint8Array {
+  const header = new ArrayBuffer(44);
+  const v = new DataView(header);
+  const bytesPerSample = bitsPerSample / 8;
+  const blockAlign = channels * bytesPerSample;
 
-  const ws = (o: number, s: string) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  const ws = (o: number, s: string) => {
+    for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i));
+  };
+
   ws(0, 'RIFF');
   v.setUint32(4, 36 + dataSize, true);
   ws(8, 'WAVE');
   ws(12, 'fmt ');
-  v.setUint32(16, 16, true);
-  v.setUint16(20, 1, true);
-  v.setUint16(22, 1, true);
+  v.setUint32(16, 16, true);            // fmt chunk size
+  v.setUint16(20, 1, true);             // PCM
+  v.setUint16(22, channels, true);
   v.setUint32(24, sampleRate, true);
-  v.setUint32(28, sampleRate * bytesPerSample, true);
-  v.setUint16(32, bytesPerSample, true);
-  v.setUint16(34, 16, true);
+  v.setUint32(28, sampleRate * blockAlign, true);
+  v.setUint16(32, blockAlign, true);
+  v.setUint16(34, bitsPerSample, true);
   ws(36, 'data');
   v.setUint32(40, dataSize, true);
 
-  let off = 44;
-  for (let i = 0; i < pcm.length; i++) {
-    const s = Math.max(-1, Math.min(1, pcm[i]));
-    v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-    off += 2;
-  }
-  return new Blob([buf], { type: 'audio/wav' });
+  return new Uint8Array(header);
 }
 
 /**
- * Decodifica um arquivo de áudio e retorna chunks WAV (16kHz mono, ≤ 20 MB cada).
- * Usa Web Audio API nativa — funciona em Safari iOS e todos os browsers modernos.
+ * Divide um arquivo WAV grande em chunks ≤ 4 MB, cada um com header WAV válido.
+ * Faz slicing direto dos bytes (zero decodificação de áudio, zero uso de memória extra).
+ * Para arquivos não-WAV, retorna o arquivo original (será enviado como está).
  */
-async function dividirAudioEmChunks(
-  file: File,
-  onStatus?: (msg: string) => void,
-): Promise<File[]> {
-  onStatus?.('Decodificando áudio…');
-  const arrayBuf = await file.arrayBuffer();
-  const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+function dividirWavEmChunks(
+  fileBytes: Uint8Array,
+  originalFile: File,
+): File[] {
+  // Verificar se é WAV: RIFF....WAVE
+  const isWav =
+    fileBytes.length > 44 &&
+    String.fromCharCode(fileBytes[0], fileBytes[1], fileBytes[2], fileBytes[3]) === 'RIFF' &&
+    String.fromCharCode(fileBytes[8], fileBytes[9], fileBytes[10], fileBytes[11]) === 'WAVE';
 
-  let decoded: AudioBuffer;
-  try {
-    decoded = await audioCtx.decodeAudioData(arrayBuf);
-  } finally {
-    await audioCtx.close().catch(() => undefined);
+  if (!isWav) {
+    // Não é WAV — retorna inteiro (o servidor tentará como está)
+    return [originalFile];
   }
 
-  // Resample para 16kHz mono
-  onStatus?.('Processando áudio…');
-  const targetRate = 16000;
-  const offCtx = new OfflineAudioContext(1, Math.ceil(decoded.duration * targetRate), targetRate);
-  const src = offCtx.createBufferSource();
-  src.buffer = decoded;
-  src.connect(offCtx.destination);
-  src.start(0);
-  const rendered = await offCtx.startRendering();
-  const fullPcm = rendered.getChannelData(0);
+  // Ler propriedades do header original
+  const view = new DataView(fileBytes.buffer, fileBytes.byteOffset, fileBytes.byteLength);
+  const channels = view.getUint16(22, true);
+  const sampleRate = view.getUint32(24, true);
+  const bitsPerSample = view.getUint16(34, true);
+  const blockAlign = channels * (bitsPerSample / 8);
 
-  // Cada amostra = 2 bytes no WAV (16-bit). Header = 44 bytes.
-  const maxSamples = Math.floor((MAX_CHUNK_BYTES - 44) / 2);
-  const totalSamples = fullPcm.length;
+  // Dados PCM começam no offset 44
+  const pcmStart = 44;
+  const pcmData = fileBytes.slice(pcmStart);
+  const totalPcmBytes = pcmData.length;
 
-  if (totalSamples * 2 + 44 <= MAX_CHUNK_BYTES) {
-    // Cabe em um único arquivo
-    const blob = criarWavBlob(fullPcm, targetRate);
-    return [new File([blob], 'audio.wav', { type: 'audio/wav' })];
+  // Quanto de PCM cabe em cada chunk (respeitando blockAlign)
+  const maxPcmPerChunk = Math.floor((MAX_CHUNK_BYTES - 44) / blockAlign) * blockAlign;
+
+  if (totalPcmBytes + 44 <= MAX_CHUNK_BYTES) {
+    return [originalFile];
   }
 
-  // Dividir em pedaços
   const chunks: File[] = [];
   let offset = 0;
   let idx = 1;
 
-  while (offset < totalSamples) {
-    const end = Math.min(offset + maxSamples, totalSamples);
-    const slice = fullPcm.slice(offset, end);
-    const blob = criarWavBlob(slice, targetRate);
+  while (offset < totalPcmBytes) {
+    const end = Math.min(offset + maxPcmPerChunk, totalPcmBytes);
+    const chunkPcm = pcmData.slice(offset, end);
+    const header = criarWavHeader(chunkPcm.length, sampleRate, channels, bitsPerSample);
+
+    const blob = new Blob([header.buffer as ArrayBuffer, chunkPcm.buffer as ArrayBuffer], { type: 'audio/wav' });
     chunks.push(new File([blob], `audio_parte${idx}.wav`, { type: 'audio/wav' }));
+
     offset = end;
     idx++;
   }
@@ -345,38 +350,23 @@ function EtapaTranscricao({
     setTamanhoMp3Mb(null);
   }, []);
 
-  // Envia arquivo(s) de áudio para transcrição. Se o arquivo for grande,
-  // divide em pedaços no browser (Web Audio API) e transcreve cada um.
+  // Envia arquivo(s) de áudio para transcrição.
+  // Se WAV > 4MB, divide em chunks por byte-slicing (rápido, sem decodificação).
   const enviarParaTranscricao = useCallback(async (
     file: File,
   ) => {
-    // Se o arquivo é pequeno (< 20 MB), envia direto
-    if (file.size <= MAX_CHUNK_BYTES) {
-      setStatusUpload('Enviando para transcrição...');
-      const formData = new FormData();
-      formData.append('audio', file, file.name || 'audio.wav');
+    setStatusUpload('Preparando áudio…');
+    const fileBytes = new Uint8Array(await file.arrayBuffer());
+    const chunks = dividirWavEmChunks(fileBytes, file);
 
-      const res = await fetch('/api/transcricao', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || `Erro ${res.status} ao transcrever.`);
-
-      const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
-      setTranscricao(texto);
-      setSucessoUpload(`Transcrição concluída! ${texto.length.toLocaleString('pt-BR')} caracteres extraídos`);
-      requestAnimationFrame(() => { transcricaoRef.current?.focus(); });
-      return;
-    }
-
-    // Arquivo grande: dividir em chunks e transcrever cada um
-    const chunks = await dividirAudioEmChunks(file, setStatusUpload);
     const partes: string[] = [];
-
     for (let i = 0; i < chunks.length; i++) {
-      setStatusUpload(`Transcrevendo parte ${i + 1} de ${chunks.length}…`);
+      setStatusUpload(
+        chunks.length > 1
+          ? `Transcrevendo parte ${i + 1} de ${chunks.length}…`
+          : 'Enviando para transcrição…',
+      );
+
       const formData = new FormData();
       formData.append('audio', chunks[i], chunks[i].name);
 
@@ -394,7 +384,11 @@ function EtapaTranscricao({
 
     const textoFinal = partes.join('\n\n');
     setTranscricao(textoFinal);
-    setSucessoUpload(`Transcrição concluída! ${chunks.length} partes — ${textoFinal.length.toLocaleString('pt-BR')} caracteres`);
+    setSucessoUpload(
+      chunks.length > 1
+        ? `Transcrição concluída! ${chunks.length} partes — ${textoFinal.length.toLocaleString('pt-BR')} caracteres`
+        : `Transcrição concluída! ${textoFinal.length.toLocaleString('pt-BR')} caracteres extraídos`,
+    );
     requestAnimationFrame(() => { transcricaoRef.current?.focus(); });
   }, [setTranscricao]);
 
