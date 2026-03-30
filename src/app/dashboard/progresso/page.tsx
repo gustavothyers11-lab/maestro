@@ -630,7 +630,7 @@ function NotificacoesTeste() {
     }
   }
 
-  async function enviarTeste() {
+  async function enviarTeste(broadcast = false) {
     const texto = mensagem.trim();
     if (!texto) {
       addLog('⚠️ Digite uma mensagem primeiro.');
@@ -638,14 +638,15 @@ function NotificacoesTeste() {
     }
 
     setEnviando(true);
-    addLog(`Enviando push: "${texto}"...`);
+    const modo = broadcast ? 'BROADCAST (todos os usuários)' : 'apenas minha conta';
+    addLog(`Enviando push (${modo}): "${texto}"...`);
 
     try {
       const res = await fetch('/api/notificacoes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tipo: 'conquista',
+          tipo: broadcast ? 'broadcast' : 'conquista',
           titulo: '🔔 Teste de Notificação',
           mensagem: texto,
         }),
@@ -659,7 +660,8 @@ function NotificacoesTeste() {
         addLog(`⚠️ Não enviado: ${JSON.stringify(data)}`);
       } else {
         addLog(`✅ Push enviado!`);
-        addLog(`   📱 Tokens no banco: ${data.totalTokens ?? '?'}`);
+        if (broadcast && data.usuarios) addLog(`   👥 Usuários no banco: ${data.usuarios}`);
+        addLog(`   📱 Tokens totais: ${data.totalTokens ?? '?'}`);
         addLog(`   ✅ Enviados com sucesso: ${data.enviados ?? '?'}`);
         addLog(`   ❌ Falhas: ${data.falhas ?? 0}`);
         if (data.tokensRemovidos > 0) {
@@ -669,10 +671,8 @@ function NotificacoesTeste() {
         if (data.messageIds?.length) {
           data.messageIds.forEach((id: string, i: number) => addLog(`   📨 [${i}] ${id}`));
         }
+        if (data.erros) addLog(`   ⚠️ Erros: ${Array.isArray(data.erros) ? data.erros.join('; ') : data.erros}`);
         if (data.erroEnvio) addLog(`   ⚠️ Erros: ${data.erroEnvio}`);
-        if ((data.tokensRestantes ?? data.totalTokens ?? 0) <= 1) {
-          addLog(`   ⚠️ Apenas 1 token! Re-registre no outro dispositivo.`);
-        }
       }
     } catch (err) {
       addLog(`❌ Erro de rede: ${err instanceof Error ? err.message : String(err)}`);
@@ -883,11 +883,18 @@ function NotificacoesTeste() {
             />
             <div className="flex flex-wrap gap-3">
               <button
-                onClick={enviarTeste}
+                onClick={() => enviarTeste(false)}
                 disabled={enviando}
                 className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
               >
-                {enviando ? 'Enviando...' : 'Push (servidor)'}
+                {enviando ? 'Enviando...' : 'Push (só eu)'}
+              </button>
+              <button
+                onClick={() => enviarTeste(true)}
+                disabled={enviando}
+                className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50 transition-colors"
+              >
+                {enviando ? 'Enviando...' : '📢 Broadcast (todos)'}
               </button>
               <button
                 onClick={testarLocal}

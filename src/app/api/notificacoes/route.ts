@@ -74,7 +74,18 @@ export async function POST(request: Request) {
     return await handleStreak(supabase, user.id, dias);
   }
 
-  return NextResponse.json({ error: 'Tipo desconhecido. Use: lembrete, conquista, missao_completa, streak.' }, { status: 400 });
+  // ── BROADCAST (envia para TODOS os usuários) ──────────────────────────
+  if (tipo === 'broadcast') {
+    const { user } = await getAuthUser(supabase);
+    if (!user) {
+      return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
+    }
+    const titulo = typeof body.titulo === 'string' ? body.titulo : '🔔 Notificação';
+    const mensagem = typeof body.mensagem === 'string' ? body.mensagem : 'Nova mensagem do Maestro!';
+    return await handleBroadcast(supabase, titulo, mensagem);
+  }
+
+  return NextResponse.json({ error: 'Tipo desconhecido. Use: lembrete, conquista, missao_completa, streak, broadcast.' }, { status: 400 });
 }
 
 // ---------------------------------------------------------------------------
@@ -216,6 +227,56 @@ async function handleMissaoCompleta(
   }
 
   return NextResponse.json({ ok: true, enviados: resultado.enviados, falhas: resultado.falhas });
+}
+
+async function handleBroadcast(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  titulo: string,
+  mensagem: string,
+) {
+  // Busca TODOS os profiles com FCM token
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, fcm_token')
+    .not('fcm_token', 'is', null);
+
+  if (!profiles || profiles.length === 0) {
+    return NextResponse.json({ ok: true, enviado: false, motivo: 'Nenhum token FCM cadastrado.', usuarios: 0 });
+  }
+
+  let totalEnviados = 0;
+  let totalFalhas = 0;
+  let totalTokens = 0;
+  const allMessageIds: string[] = [];
+  const erros: string[] = [];
+
+  for (const profile of profiles) {
+    const tokens = parseTokens(profile.fcm_token);
+    if (tokens.length === 0) continue;
+    totalTokens += tokens.length;
+
+    const resultado = await enviarPushParaUsuario(tokens, titulo, mensagem, '/dashboard');
+    totalEnviados += resultado.enviados;
+    totalFalhas += resultado.falhas;
+    allMessageIds.push(...resultado.messageIds);
+    if (resultado.erros.length > 0) erros.push(...resultado.erros);
+
+    // Limpar tokens inválidos
+    if (resultado.tokensInvalidos.length > 0) {
+      const tokensLimpos = tokens.filter((t) => !resultado.tokensInvalidos.includes(t));
+      await supabase.from('profiles').update({ fcm_token: JSON.stringify(tokensLimpos) }).eq('id', profile.id);
+    }
+  }
+
+  return NextResponse.json({
+    ok: totalEnviados > 0,
+    enviados: totalEnviados,
+    falhas: totalFalhas,
+    totalTokens,
+    usuarios: profiles.length,
+    messageIds: allMessageIds,
+    erros: erros.length > 0 ? erros : null,
+  });
 }
 
 async function handleStreak(
