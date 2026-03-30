@@ -539,15 +539,7 @@ function NotificacoesTeste() {
       return;
     }
 
-    const perm = await Notification.requestPermission();
-    addLog(`Permissão: ${perm}`);
-
-    if (perm !== 'granted') {
-      addLog('❌ Permissão negada. Ative nas configurações do navegador.');
-      return;
-    }
-
-    addLog('✅ Permissão concedida. Registrando service worker...');
+    addLog('Notification API disponível. Registrando...');
 
     try {
       const { solicitarPermissao } = await import('@/lib/notifications');

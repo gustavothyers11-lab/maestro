@@ -32,7 +32,10 @@ export async function solicitarPermissao(): Promise<string | null> {
     throw new Error('Firebase Messaging não suportado neste navegador.');
   }
 
-  const permission = await Notification.requestPermission();
+  let permission = Notification.permission;
+  if (permission === 'default') {
+    permission = await Notification.requestPermission();
+  }
   if (permission !== 'granted') {
     throw new Error(`Permissão negada: ${permission}`);
   }
