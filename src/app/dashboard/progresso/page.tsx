@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
 // ---------------------------------------------------------------------------
@@ -484,6 +484,194 @@ export default function ProgressoPage() {
           </div>
         </div>
       )}
+
+      {/* ═══════════════════════════════════════════════════════════
+          6. TESTE DE NOTIFICAÇÕES
+      ═══════════════════════════════════════════════════════════ */}
+      <NotificacoesTeste />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Componente de teste de notificações
+// ---------------------------------------------------------------------------
+
+function NotificacoesTeste() {
+  const [mensagem, setMensagem] = useState('');
+  const [logEntries, setLogEntries] = useState<string[]>([]);
+  const [enviando, setEnviando] = useState(false);
+  const [aberto, setAberto] = useState(false);
+
+  const addLog = useCallback((msg: string) => {
+    setLogEntries((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+  }, []);
+
+  async function pedirPermissao() {
+    addLog('Solicitando permissão de notificação...');
+
+    if (!('Notification' in window)) {
+      addLog('❌ Este navegador não suporta notificações.');
+      return;
+    }
+
+    const perm = await Notification.requestPermission();
+    addLog(`Permissão: ${perm}`);
+
+    if (perm !== 'granted') {
+      addLog('❌ Permissão negada. Ative nas configurações do navegador.');
+      return;
+    }
+
+    addLog('✅ Permissão concedida. Registrando service worker...');
+
+    try {
+      const { solicitarPermissao } = await import('@/lib/notifications');
+      const token = await solicitarPermissao();
+
+      if (token) {
+        addLog(`✅ Token FCM obtido: ${token.slice(0, 20)}...`);
+        addLog('Token salvo no perfil do Supabase.');
+      } else {
+        addLog('❌ Não foi possível obter token FCM. Verifique VAPID key e config do Firebase.');
+      }
+    } catch (err) {
+      addLog(`❌ Erro ao registrar: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  async function enviarTeste() {
+    const texto = mensagem.trim();
+    if (!texto) {
+      addLog('⚠️ Digite uma mensagem primeiro.');
+      return;
+    }
+
+    setEnviando(true);
+    addLog(`Enviando push: "${texto}"...`);
+
+    try {
+      const res = await fetch('/api/notificacoes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tipo: 'conquista',
+          titulo: '🔔 Teste de Notificação',
+          mensagem: texto,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        addLog(`❌ Erro ${res.status}: ${data.error || JSON.stringify(data)}`);
+      } else if (data.enviado === false) {
+        addLog(`⚠️ Não enviado: ${data.motivo || 'sem token FCM no perfil'}`);
+      } else {
+        addLog(`✅ Push enviado! ${JSON.stringify(data)}`);
+      }
+    } catch (err) {
+      addLog(`❌ Erro de rede: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  async function testarLocal() {
+    const texto = mensagem.trim() || 'Teste local do Maestro';
+    addLog(`Notificação local: "${texto}"...`);
+
+    if (Notification.permission !== 'granted') {
+      addLog('❌ Permissão não concedida. Clique em "Ativar Permissão" primeiro.');
+      return;
+    }
+
+    try {
+      new Notification('🔔 Teste Local', { body: texto, icon: '/icon-192.png' });
+      addLog('✅ Notificação local exibida.');
+    } catch (err) {
+      addLog(`❌ Erro: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-gray-200/60 dark:border-white/[0.06] bg-white dark:bg-[#1a1a35] overflow-hidden">
+      <button
+        onClick={() => setAberto((v) => !v)}
+        className="flex w-full items-center justify-between p-5 sm:p-6 text-left"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-xl">🔔</span>
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+            Teste de Notificações
+          </h2>
+        </div>
+        <svg
+          className={`h-5 w-5 text-gray-400 transition-transform ${aberto ? 'rotate-180' : ''}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {aberto && (
+        <div className="border-t border-gray-200/60 dark:border-white/[0.06] p-5 sm:p-6 space-y-5">
+          {/* Passo 1 */}
+          <div>
+            <p className="mb-2 text-sm font-semibold text-gray-700 dark:text-white/70">1. Ativar permissão + registrar token</p>
+            <button
+              onClick={pedirPermissao}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+            >
+              Ativar Permissão
+            </button>
+          </div>
+
+          {/* Passo 2 */}
+          <div>
+            <p className="mb-2 text-sm font-semibold text-gray-700 dark:text-white/70">2. Enviar notificação de teste</p>
+            <textarea
+              value={mensagem}
+              onChange={(e) => setMensagem(e.target.value)}
+              placeholder="Digite a mensagem..."
+              rows={2}
+              className="mb-3 w-full rounded-lg border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.03] p-2.5 text-sm"
+            />
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={enviarTeste}
+                disabled={enviando}
+                className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+              >
+                {enviando ? 'Enviando...' : 'Push (servidor)'}
+              </button>
+              <button
+                onClick={testarLocal}
+                className="rounded-lg bg-yellow-600 px-4 py-2 text-sm font-medium text-white hover:bg-yellow-700 transition-colors"
+              >
+                Local (sem servidor)
+              </button>
+            </div>
+          </div>
+
+          {/* Log */}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-sm font-semibold text-gray-700 dark:text-white/70">Log</p>
+              <button onClick={() => setLogEntries([])} className="text-xs text-gray-400 hover:text-gray-200">Limpar</button>
+            </div>
+            <div className="max-h-48 overflow-y-auto rounded-lg bg-gray-100 dark:bg-black/30 p-3 font-mono text-xs">
+              {logEntries.length === 0 ? (
+                <span className="text-gray-400">Nenhum log ainda...</span>
+              ) : (
+                logEntries.map((entry, i) => (
+                  <div key={i} className="mb-1 whitespace-pre-wrap">{entry}</div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
