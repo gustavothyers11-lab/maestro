@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { execFile } from 'child_process';
+import { writeFile, readFile, unlink } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 export const maxDuration = 60;
 
@@ -49,6 +53,50 @@ function detectarFormatoAudio(bytes: Uint8Array): { ext: 'wav' | 'mp3' | 'm4a' |
   }
 
   return { ext: 'bin', mime: 'application/octet-stream' };
+}
+
+/**
+ * Converte áudio M4A/MP4 (ou qualquer formato) para WAV 16kHz mono usando ffmpeg-static.
+ * Retorna os bytes WAV, ou null se a conversão falhar (nesse caso, tenta-se o original).
+ */
+async function converterParaWav(inputBytes: Uint8Array): Promise<Uint8Array | null> {
+  let ffmpegPath: string | null = null;
+  try {
+    // ffmpeg-static exporta o path do binário
+    ffmpegPath = (await import('ffmpeg-static')).default;
+  } catch {
+    return null;
+  }
+
+  if (!ffmpegPath) return null;
+
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const inputPath = join(tmpdir(), `maestro-in-${id}.m4a`);
+  const outputPath = join(tmpdir(), `maestro-out-${id}.wav`);
+
+  try {
+    await writeFile(inputPath, inputBytes);
+
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        ffmpegPath!,
+        ['-i', inputPath, '-vn', '-ar', '16000', '-ac', '1', '-f', 'wav', '-y', outputPath],
+        { timeout: 30000 },
+        (error) => {
+          if (error) reject(error);
+          else resolve();
+        },
+      );
+    });
+
+    const wavBytes = await readFile(outputPath);
+    return new Uint8Array(wavBytes);
+  } catch {
+    return null;
+  } finally {
+    await unlink(inputPath).catch(() => undefined);
+    await unlink(outputPath).catch(() => undefined);
+  }
 }
 
 async function chamarGroqTranscricao(params: {
@@ -298,20 +346,45 @@ export async function POST(request: Request) {
 
     const filename = fileName || nomeSeguroParaUpload('audio_upload.mp3');
     const baseMime = mimeType || 'audio/mpeg';
-    const bytes = await audio.arrayBuffer();
+    const originalBytes = await audio.arrayBuffer();
 
+    // Detectar formato real do áudio
+    const formatoDetectado = detectarFormatoAudio(new Uint8Array(originalBytes));
+    const precisaConverter = formatoDetectado.ext === 'm4a' || formatoDetectado.ext === 'bin';
+
+    // Se o formato é M4A ou desconhecido, tenta converter para WAV primeiro
+    let bytesParaEnviar = originalBytes;
+    let nomeParaEnviar = filename;
+    let mimeParaEnviar = baseMime;
+
+    if (precisaConverter) {
+      const wavBytes = await converterParaWav(new Uint8Array(originalBytes));
+      if (wavBytes) {
+        bytesParaEnviar = wavBytes.buffer as ArrayBuffer;
+        nomeParaEnviar = 'audio_convertido.wav';
+        mimeParaEnviar = 'audio/wav';
+      }
+    }
+
+    // Tenta primeiro com o formato (possivelmente convertido)
     const tentativas = [
-      { fileName: filename, mimeType: baseMime },
-      { fileName: 'audio_upload.wav', mimeType: 'audio/wav' },
-      { fileName: 'audio_upload.mp3', mimeType: 'audio/mpeg' },
-      { fileName: 'audio_upload.m4a', mimeType: 'audio/mp4' },
+      { fileName: nomeParaEnviar, mimeType: mimeParaEnviar, bytes: bytesParaEnviar },
     ];
+
+    // Se não convertemos, adiciona fallbacks de mime-type
+    if (bytesParaEnviar === originalBytes) {
+      tentativas.push(
+        { fileName: 'audio_upload.wav', mimeType: 'audio/wav', bytes: originalBytes },
+        { fileName: 'audio_upload.mp3', mimeType: 'audio/mpeg', bytes: originalBytes },
+        { fileName: 'audio_upload.m4a', mimeType: 'audio/mp4', bytes: originalBytes },
+      );
+    }
 
     let ultimo: GroqTranscricaoResult | null = null;
     for (const tentativa of tentativas) {
       const resTry = await chamarGroqTranscricao({
         apiKey,
-        bytes,
+        bytes: tentativa.bytes,
         fileName: tentativa.fileName,
         mimeType: tentativa.mimeType,
       });
@@ -322,6 +395,22 @@ export async function POST(request: Request) {
       // Se não for o erro clássico de pattern, não adianta insistir em formato.
       if (!/expected pattern|did not match the expected pattern/i.test(resTry.texto)) {
         break;
+      }
+    }
+
+    // Fallback final: se todas as tentativas falharam e ainda não tentou converter, converte agora
+    if ((!ultimo || !ultimo.ok) && !precisaConverter) {
+      const wavBytes = await converterParaWav(new Uint8Array(originalBytes));
+      if (wavBytes) {
+        const resFallback = await chamarGroqTranscricao({
+          apiKey,
+          bytes: wavBytes.buffer as ArrayBuffer,
+          fileName: 'audio_convertido.wav',
+          mimeType: 'audio/wav',
+        });
+        if (resFallback.ok) {
+          ultimo = resFallback;
+        }
       }
     }
 
