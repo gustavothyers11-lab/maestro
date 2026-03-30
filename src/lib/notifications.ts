@@ -46,8 +46,17 @@ export async function solicitarPermissao(): Promise<string | null> {
   }
 
   try {
+    const swConfig = new URLSearchParams({
+      apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? '',
+      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? '',
+      messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ?? '',
+      appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID ?? '',
+    });
+
     // Registra o service worker explicitamente
-    const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    const registration = await navigator.serviceWorker.register(
+      `/firebase-messaging-sw.js?${swConfig.toString()}`,
+    );
 
     const token = await getToken(messaging, {
       vapidKey,
