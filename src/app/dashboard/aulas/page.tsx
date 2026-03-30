@@ -100,6 +100,99 @@ async function getFFmpeg(): Promise<FFmpeg> {
 }
 
 // ---------------------------------------------------------------------------
+// Limite Groq Whisper: 25 MB. Usamos 20 MB como margem segura.
+// ---------------------------------------------------------------------------
+const MAX_CHUNK_BYTES = 20 * 1024 * 1024;
+
+/** Monta um Blob WAV (PCM 16-bit, mono) a partir de Float32Array de amostras. */
+function criarWavBlob(pcm: Float32Array, sampleRate: number): Blob {
+  const bytesPerSample = 2;
+  const dataSize = pcm.length * bytesPerSample;
+  const buf = new ArrayBuffer(44 + dataSize);
+  const v = new DataView(buf);
+
+  const ws = (o: number, s: string) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  ws(0, 'RIFF');
+  v.setUint32(4, 36 + dataSize, true);
+  ws(8, 'WAVE');
+  ws(12, 'fmt ');
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true);
+  v.setUint32(24, sampleRate, true);
+  v.setUint32(28, sampleRate * bytesPerSample, true);
+  v.setUint16(32, bytesPerSample, true);
+  v.setUint16(34, 16, true);
+  ws(36, 'data');
+  v.setUint32(40, dataSize, true);
+
+  let off = 44;
+  for (let i = 0; i < pcm.length; i++) {
+    const s = Math.max(-1, Math.min(1, pcm[i]));
+    v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    off += 2;
+  }
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+/**
+ * Decodifica um arquivo de áudio e retorna chunks WAV (16kHz mono, ≤ 20 MB cada).
+ * Usa Web Audio API nativa — funciona em Safari iOS e todos os browsers modernos.
+ */
+async function dividirAudioEmChunks(
+  file: File,
+  onStatus?: (msg: string) => void,
+): Promise<File[]> {
+  onStatus?.('Decodificando áudio…');
+  const arrayBuf = await file.arrayBuffer();
+  const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+
+  let decoded: AudioBuffer;
+  try {
+    decoded = await audioCtx.decodeAudioData(arrayBuf);
+  } finally {
+    await audioCtx.close().catch(() => undefined);
+  }
+
+  // Resample para 16kHz mono
+  onStatus?.('Processando áudio…');
+  const targetRate = 16000;
+  const offCtx = new OfflineAudioContext(1, Math.ceil(decoded.duration * targetRate), targetRate);
+  const src = offCtx.createBufferSource();
+  src.buffer = decoded;
+  src.connect(offCtx.destination);
+  src.start(0);
+  const rendered = await offCtx.startRendering();
+  const fullPcm = rendered.getChannelData(0);
+
+  // Cada amostra = 2 bytes no WAV (16-bit). Header = 44 bytes.
+  const maxSamples = Math.floor((MAX_CHUNK_BYTES - 44) / 2);
+  const totalSamples = fullPcm.length;
+
+  if (totalSamples * 2 + 44 <= MAX_CHUNK_BYTES) {
+    // Cabe em um único arquivo
+    const blob = criarWavBlob(fullPcm, targetRate);
+    return [new File([blob], 'audio.wav', { type: 'audio/wav' })];
+  }
+
+  // Dividir em pedaços
+  const chunks: File[] = [];
+  let offset = 0;
+  let idx = 1;
+
+  while (offset < totalSamples) {
+    const end = Math.min(offset + maxSamples, totalSamples);
+    const slice = fullPcm.slice(offset, end);
+    const blob = criarWavBlob(slice, targetRate);
+    chunks.push(new File([blob], `audio_parte${idx}.wav`, { type: 'audio/wav' }));
+    offset = end;
+    idx++;
+  }
+
+  return chunks;
+}
+
+// ---------------------------------------------------------------------------
 // Stepper visual
 // ---------------------------------------------------------------------------
 
@@ -252,27 +345,56 @@ function EtapaTranscricao({
     setTamanhoMp3Mb(null);
   }, []);
 
-  // Abordagem universal: envia o arquivo original via FormData.
-  // Funciona em todos os browsers (desktop e iOS) sem conversão.
+  // Envia arquivo(s) de áudio para transcrição. Se o arquivo for grande,
+  // divide em pedaços no browser (Web Audio API) e transcreve cada um.
   const enviarParaTranscricao = useCallback(async (
     file: File,
   ) => {
-    setStatusUpload('Enviando para transcrição...');
-    const formData = new FormData();
-    formData.append('audio', file, file.name || 'audio.wav');
+    // Se o arquivo é pequeno (< 20 MB), envia direto
+    if (file.size <= MAX_CHUNK_BYTES) {
+      setStatusUpload('Enviando para transcrição...');
+      const formData = new FormData();
+      formData.append('audio', file, file.name || 'audio.wav');
 
-    const res = await fetch('/api/transcricao', {
-      method: 'POST',
-      body: formData,
-    });
+      const res = await fetch('/api/transcricao', {
+        method: 'POST',
+        body: formData,
+      });
 
-    setStatusUpload('Transcrevendo áudio...');
-    const payload = await res.json();
-    if (!res.ok) throw new Error(payload.error || `Erro ${res.status} ao transcrever.`);
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || `Erro ${res.status} ao transcrever.`);
 
-    const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
-    setTranscricao(texto);
-    setSucessoUpload(`Transcrição concluída! ${texto.length.toLocaleString('pt-BR')} caracteres extraídos`);
+      const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
+      setTranscricao(texto);
+      setSucessoUpload(`Transcrição concluída! ${texto.length.toLocaleString('pt-BR')} caracteres extraídos`);
+      requestAnimationFrame(() => { transcricaoRef.current?.focus(); });
+      return;
+    }
+
+    // Arquivo grande: dividir em chunks e transcrever cada um
+    const chunks = await dividirAudioEmChunks(file, setStatusUpload);
+    const partes: string[] = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      setStatusUpload(`Transcrevendo parte ${i + 1} de ${chunks.length}…`);
+      const formData = new FormData();
+      formData.append('audio', chunks[i], chunks[i].name);
+
+      const res = await fetch('/api/transcricao', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || `Erro na parte ${i + 1}: ${res.status}`);
+
+      const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
+      if (texto) partes.push(texto);
+    }
+
+    const textoFinal = partes.join('\n\n');
+    setTranscricao(textoFinal);
+    setSucessoUpload(`Transcrição concluída! ${chunks.length} partes — ${textoFinal.length.toLocaleString('pt-BR')} caracteres`);
     requestAnimationFrame(() => { transcricaoRef.current?.focus(); });
   }, [setTranscricao]);
 
