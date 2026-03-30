@@ -1,6 +1,3 @@
-// Componente client-side que inicializa notificações FCM no primeiro acesso do dia
-// e dispara push de streak quando aplicável
-
 'use client';
 
 import { useEffect } from 'react';
@@ -20,7 +17,6 @@ const STORAGE_KEY_STREAK = 'maestro_streak_notif';
 export default function NotificacoesInit() {
   useEffect(() => {
     async function init() {
-      // Só executa uma vez por dia
       const hoje = new Date().toDateString();
       const ultimaInit = localStorage.getItem(STORAGE_KEY_FCM);
       if (ultimaInit === hoje) return;
@@ -29,23 +25,37 @@ export default function NotificacoesInit() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Solicitar permissão e salvar token FCM
       try {
         await solicitarPermissao();
       } catch {
         // not blocking
       }
 
-      // Agendar lembrete diário às 20h
       agendarLembreteDiario(20, 0);
-
       localStorage.setItem(STORAGE_KEY_FCM, hoje);
-
-      // Verificar streak e disparar notificação nos marcos
       verificarStreak(user.id, supabase);
     }
 
     init();
+
+    // Handler de notificações em foreground (app aberto)
+    let unsubscribe: (() => void) | null = null;
+    import('@/lib/notifications').then(async ({ ouvirNotificacoes }) => {
+      unsubscribe = await ouvirNotificacoes((titulo, corpo) => {
+        if ('serviceWorker' in navigator && Notification.permission === 'granted') {
+          navigator.serviceWorker.ready.then((reg) => {
+            reg.showNotification(titulo, {
+              body: corpo,
+              icon: '/icon-192.png',
+            });
+          });
+        }
+      });
+    }).catch(() => {});
+
+    return () => {
+      unsubscribe?.();
+    };
   }, []);
 
   return null;
