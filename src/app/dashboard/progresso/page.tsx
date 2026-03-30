@@ -508,18 +508,31 @@ function NotificacoesTeste() {
   }, []);
 
   async function pedirPermissao() {
-    addLog('Solicitando permissão de notificação...');
-
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as unknown as { standalone?: boolean }).standalone === true;
 
+    // Diagnóstico completo
+    addLog('── Diagnóstico ──');
+    addLog(`iOS: ${isIOS}`);
+    addLog(`Standalone (PWA): ${isStandalone}`);
+    addLog(`navigator.standalone: ${(navigator as unknown as { standalone?: boolean }).standalone}`);
+    addLog(`display-mode standalone: ${window.matchMedia('(display-mode: standalone)').matches}`);
+    addLog(`"Notification" in window: ${'Notification' in window}`);
+    addLog(`"serviceWorker" in navigator: ${'serviceWorker' in navigator}`);
+    addLog(`"PushManager" in window: ${'PushManager' in window}`);
+    addLog(`UserAgent: ${navigator.userAgent.slice(0, 120)}`);
+    addLog('──────────────────');
+
     if (!('Notification' in window)) {
       if (isIOS && !isStandalone) {
-        addLog('⚠️ No iOS, notificações push só funcionam com o app instalado na tela inicial.');
-        addLog('👉 Toque no botão de compartilhar (↑) do Safari → "Adicionar à Tela de Início" → abra o Maestro por lá.');
-        addLog('⚠️ Chrome no iOS não suporta push. Use o Safari para instalar.');
+        addLog('⚠️ Notification API ausente. No iOS, precisa:');
+        addLog('1. Abrir no Safari (NÃO Chrome/Firefox)');
+        addLog('2. Tocar compartilhar (↑) → "Adicionar à Tela de Início"');
+        addLog('3. Abrir o Maestro pelo ícone na tela inicial');
       } else if (isIOS && isStandalone) {
-        addLog('❌ Notification API não disponível mesmo como PWA. Verifique se está no iOS 16.4+.');
+        addLog('❌ Notification API não disponível mesmo como PWA.');
+        addLog('Pode ser que o iOS não reconheceu como PWA válido.');
+        addLog('Tente: remover da tela inicial → limpar cache do Safari → adicionar novamente.');
       } else {
         addLog('❌ Este navegador não suporta notificações.');
       }
