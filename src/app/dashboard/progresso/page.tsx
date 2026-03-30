@@ -510,8 +510,19 @@ function NotificacoesTeste() {
   async function pedirPermissao() {
     addLog('Solicitando permissão de notificação...');
 
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as unknown as { standalone?: boolean }).standalone === true;
+
     if (!('Notification' in window)) {
-      addLog('❌ Este navegador não suporta notificações.');
+      if (isIOS && !isStandalone) {
+        addLog('⚠️ No iOS, notificações push só funcionam com o app instalado na tela inicial.');
+        addLog('👉 Toque no botão de compartilhar (↑) do Safari → "Adicionar à Tela de Início" → abra o Maestro por lá.');
+        addLog('⚠️ Chrome no iOS não suporta push. Use o Safari para instalar.');
+      } else if (isIOS && isStandalone) {
+        addLog('❌ Notification API não disponível mesmo como PWA. Verifique se está no iOS 16.4+.');
+      } else {
+        addLog('❌ Este navegador não suporta notificações.');
+      }
       return;
     }
 
