@@ -167,8 +167,9 @@ async function handleConquista(
   const resultado = await enviarPushParaUsuario(tokens, titulo, mensagem, '/dashboard/missoes');
 
   // Limpar tokens inválidos
+  let tokensLimpos = tokens;
   if (resultado.tokensInvalidos.length > 0) {
-    const tokensLimpos = tokens.filter((t) => !resultado.tokensInvalidos.includes(t));
+    tokensLimpos = tokens.filter((t) => !resultado.tokensInvalidos.includes(t));
     await supabase.from('profiles').update({ fcm_token: JSON.stringify(tokensLimpos) }).eq('id', userId);
   }
 
@@ -180,6 +181,8 @@ async function handleConquista(
     erroEnvio: resultado.erros.length > 0 ? resultado.erros.join('; ') : null,
     messageIds: resultado.messageIds,
     totalTokens: tokens.length,
+    tokensRemovidos: resultado.tokensInvalidos.length,
+    tokensRestantes: tokensLimpos.length,
   });
 }
 

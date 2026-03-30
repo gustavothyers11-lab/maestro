@@ -104,8 +104,12 @@ export async function enviarPushMultiplo(
     // Coletar tokens inválidos para limpeza
     const tokensInvalidos: string[] = [];
     resposta.responses.forEach((r, i) => {
-      if (!r.success && r.error?.code === 'messaging/registration-token-not-registered') {
-        tokensInvalidos.push(tokens[i]);
+      if (!r.success) {
+        const code = r.error?.code ?? '';
+        const msg = r.error?.message?.toLowerCase() ?? '';
+        if (code.includes('not-registered') || msg.includes('notregistered') || msg.includes('not registered')) {
+          tokensInvalidos.push(tokens[i]);
+        }
       }
     });
 
@@ -166,7 +170,8 @@ export async function enviarPushParaUsuario(
     } else {
       falhas++;
       if (resultado.erro) erros.push(resultado.erro);
-      if (resultado.erro?.includes('not-registered') || resultado.erro?.includes('invalid-registration-token')) {
+      const erroLower = resultado.erro?.toLowerCase() ?? '';
+      if (erroLower.includes('notregistered') || erroLower.includes('not-registered') || erroLower.includes('not registered') || erroLower.includes('invalid-registration-token') || erroLower.includes('invalid registration')) {
         tokensInvalidos.push(token);
       }
     }

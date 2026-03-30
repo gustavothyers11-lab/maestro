@@ -662,11 +662,15 @@ function NotificacoesTeste() {
         addLog(`   📱 Tokens no banco: ${data.totalTokens ?? '?'}`);
         addLog(`   ✅ Enviados com sucesso: ${data.enviados ?? '?'}`);
         addLog(`   ❌ Falhas: ${data.falhas ?? 0}`);
+        if (data.tokensRemovidos > 0) {
+          addLog(`   🗑️ Tokens expirados removidos: ${data.tokensRemovidos}`);
+          addLog(`   📱 Tokens restantes: ${data.tokensRestantes}`);
+        }
         if (data.messageIds?.length) {
           data.messageIds.forEach((id: string, i: number) => addLog(`   📨 [${i}] ${id}`));
         }
         if (data.erroEnvio) addLog(`   ⚠️ Erros: ${data.erroEnvio}`);
-        if ((data.totalTokens ?? 0) <= 1) {
+        if ((data.tokensRestantes ?? data.totalTokens ?? 0) <= 1) {
           addLog(`   ⚠️ Apenas 1 token! Re-registre no outro dispositivo.`);
         }
       }
