@@ -658,7 +658,17 @@ function NotificacoesTeste() {
       } else if (data.enviado === false) {
         addLog(`⚠️ Não enviado: ${JSON.stringify(data)}`);
       } else {
-        addLog(`✅ Push enviado! ${JSON.stringify(data)}`);
+        addLog(`✅ Push enviado!`);
+        addLog(`   📱 Tokens no banco: ${data.totalTokens ?? '?'}`);
+        addLog(`   ✅ Enviados com sucesso: ${data.enviados ?? '?'}`);
+        addLog(`   ❌ Falhas: ${data.falhas ?? 0}`);
+        if (data.messageIds?.length) {
+          data.messageIds.forEach((id: string, i: number) => addLog(`   📨 [${i}] ${id}`));
+        }
+        if (data.erroEnvio) addLog(`   ⚠️ Erros: ${data.erroEnvio}`);
+        if ((data.totalTokens ?? 0) <= 1) {
+          addLog(`   ⚠️ Apenas 1 token! Re-registre no outro dispositivo.`);
+        }
       }
     } catch (err) {
       addLog(`❌ Erro de rede: ${err instanceof Error ? err.message : String(err)}`);

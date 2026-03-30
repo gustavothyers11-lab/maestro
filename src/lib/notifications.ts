@@ -127,6 +127,26 @@ export async function salvarToken(token: string): Promise<void> {
     console.error('[FCM] Erro ao salvar token no Supabase:', error.message);
     throw new Error(`Erro ao salvar token no Supabase: ${error.message}`);
   }
+
+  // Verificação: reler o banco e confirmar que todos os tokens estão lá
+  const { data: verify } = await supabase
+    .from('profiles')
+    .select('fcm_token')
+    .eq('id', user.id)
+    .single();
+
+  if (verify?.fcm_token) {
+    try {
+      const saved = JSON.parse(verify.fcm_token);
+      const count = Array.isArray(saved) ? saved.length : 1;
+      console.log(`[FCM] ✅ Verificação: ${count} token(s) salvos no banco`);
+      if (Array.isArray(saved) && !saved.includes(token)) {
+        console.error('[FCM] ❌ Token atual NÃO está no banco após salvar!');
+      }
+    } catch {
+      console.log('[FCM] Token salvo como string simples (formato antigo)');
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
