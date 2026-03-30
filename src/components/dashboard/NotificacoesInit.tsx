@@ -42,16 +42,23 @@ export default function NotificacoesInit() {
     let unsubscribe: (() => void) | null = null;
     import('@/lib/notifications').then(async ({ ouvirNotificacoes }) => {
       unsubscribe = await ouvirNotificacoes((titulo, corpo) => {
-        if ('serviceWorker' in navigator && Notification.permission === 'granted') {
-          navigator.serviceWorker.ready.then((reg) => {
-            reg.showNotification(titulo, {
-              body: corpo,
-              icon: '/icon-192.png',
+        console.log('[NotificacoesInit] onMessage foreground:', titulo, corpo);
+        if (Notification.permission === 'granted') {
+          try {
+            // Desktop: new Notification() funciona melhor em foreground
+            new Notification(titulo, { body: corpo, icon: '/icon-192.png' });
+          } catch {
+            // PWA/mobile: fallback para SW
+            navigator.serviceWorker?.ready.then((reg) => {
+              reg.showNotification(titulo, { body: corpo, icon: '/icon-192.png' });
             });
-          });
+          }
         }
       });
-    }).catch(() => {});
+      console.log('[NotificacoesInit] onMessage listener registrado');
+    }).catch((err) => {
+      console.error('[NotificacoesInit] Erro ao registrar onMessage:', err);
+    });
 
     return () => {
       unsubscribe?.();

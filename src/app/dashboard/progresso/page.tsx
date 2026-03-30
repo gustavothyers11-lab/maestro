@@ -502,10 +502,52 @@ function NotificacoesTeste() {
   const [logEntries, setLogEntries] = useState<string[]>([]);
   const [enviando, setEnviando] = useState(false);
   const [aberto, setAberto] = useState(false);
+  const [escutando, setEscutando] = useState(false);
 
   const addLog = useCallback((msg: string) => {
     setLogEntries((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
   }, []);
+
+  // Ativa listener de foreground com log visível
+  const ativarListener = useCallback(async () => {
+    if (escutando) return;
+    try {
+      const { getFirebaseMessaging } = await import('@/lib/firebase');
+      const { onMessage } = await import('firebase/messaging');
+      const messaging = await getFirebaseMessaging();
+      if (!messaging) {
+        addLog('❌ Firebase Messaging não suportado.');
+        return;
+      }
+      onMessage(messaging, (payload) => {
+        addLog(`📩 onMessage recebido! title="${payload.notification?.title}" body="${payload.notification?.body}"`);
+        addLog(`   payload completo: ${JSON.stringify(payload).slice(0, 300)}`);
+        // Mostrar notificação
+        if (Notification.permission === 'granted') {
+          try {
+            new Notification(payload.notification?.title ?? 'Maestro', {
+              body: payload.notification?.body ?? '',
+              icon: '/icon-192.png',
+            });
+            addLog('✅ Notificação exibida via new Notification()');
+          } catch {
+            // Fallback para SW
+            navigator.serviceWorker?.ready.then((reg) => {
+              reg.showNotification(payload.notification?.title ?? 'Maestro', {
+                body: payload.notification?.body ?? '',
+                icon: '/icon-192.png',
+              });
+              addLog('✅ Notificação exibida via SW showNotification()');
+            });
+          }
+        }
+      });
+      setEscutando(true);
+      addLog('👂 Listener onMessage ativado! Agora envie um push para testar.');
+    } catch (err) {
+      addLog(`❌ Erro ao ativar listener: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [escutando, addLog]);
 
   async function pedirPermissao() {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -703,7 +745,19 @@ function NotificacoesTeste() {
 
           {/* Passo 2 */}
           <div>
-            <p className="mb-2 text-sm font-semibold text-gray-700 dark:text-white/70">2. Enviar notificação de teste</p>
+            <p className="mb-2 text-sm font-semibold text-gray-700 dark:text-white/70">2. Ativar listener de foreground (debug)</p>
+            <button
+              onClick={ativarListener}
+              disabled={escutando}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            >
+              {escutando ? '👂 Escutando...' : '👂 Ativar Listener onMessage'}
+            </button>
+          </div>
+
+          {/* Passo 3 */}
+          <div>
+            <p className="mb-2 text-sm font-semibold text-gray-700 dark:text-white/70">3. Enviar notificação de teste</p>
             <textarea
               value={mensagem}
               onChange={(e) => setMensagem(e.target.value)}
