@@ -80,73 +80,24 @@ export async function solicitarPermissao(): Promise<string | null> {
 // ---------------------------------------------------------------------------
 
 /**
- * Salva ou atualiza o FCM token do usuário autenticado em `profiles`.
- * Armazena como JSON array para suportar múltiplos dispositivos.
+ * Salva o FCM token via API server-side para evitar race conditions.
  */
-export async function salvarToken(token: string): Promise<void> {
-  const supabase = criarSupabase();
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
+export async function salvarToken(token: string): Promise<{ tokensBefore: number; tokensAfter: number; novoTokenSalvo: boolean }> {
+  const res = await fetch('/api/notificacoes/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
 
-  if (authErr || !user) {
-    console.warn('[FCM] Usuário não autenticado. Token não salvo.');
-    return;
+  const data = await res.json();
+
+  if (!res.ok) {
+    console.error('[FCM] Erro ao salvar token via API:', data.error);
+    throw new Error(`Erro ao salvar token: ${data.error}`);
   }
 
-  // Buscar tokens existentes
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('fcm_token')
-    .eq('id', user.id)
-    .single();
-
-  let tokens: string[] = [];
-  if (profile?.fcm_token) {
-    try {
-      const parsed = JSON.parse(profile.fcm_token);
-      tokens = Array.isArray(parsed) ? parsed : [profile.fcm_token];
-    } catch {
-      // Token antigo (string simples) — migrar para array
-      tokens = [profile.fcm_token];
-    }
-  }
-
-  // Adicionar novo token se não existir (max 5 dispositivos)
-  if (!tokens.includes(token)) {
-    tokens.push(token);
-    if (tokens.length > 5) tokens.shift(); // remove o mais antigo
-  }
-
-  const { error } = await supabase
-    .from('profiles')
-    .upsert({ id: user.id, fcm_token: JSON.stringify(tokens) }, { onConflict: 'id' });
-
-  if (error) {
-    console.error('[FCM] Erro ao salvar token no Supabase:', error.message);
-    throw new Error(`Erro ao salvar token no Supabase: ${error.message}`);
-  }
-
-  // Verificação: reler o banco e confirmar que todos os tokens estão lá
-  const { data: verify } = await supabase
-    .from('profiles')
-    .select('fcm_token')
-    .eq('id', user.id)
-    .single();
-
-  if (verify?.fcm_token) {
-    try {
-      const saved = JSON.parse(verify.fcm_token);
-      const count = Array.isArray(saved) ? saved.length : 1;
-      console.log(`[FCM] ✅ Verificação: ${count} token(s) salvos no banco`);
-      if (Array.isArray(saved) && !saved.includes(token)) {
-        console.error('[FCM] ❌ Token atual NÃO está no banco após salvar!');
-      }
-    } catch {
-      console.log('[FCM] Token salvo como string simples (formato antigo)');
-    }
-  }
+  console.log(`[FCM] Token salvo: antes=${data.tokensBefore}, depois=${data.tokensAfter}, salvo=${data.novoTokenSalvo}`);
+  return { tokensBefore: data.tokensBefore, tokensAfter: data.tokensAfter, novoTokenSalvo: data.novoTokenSalvo };
 }
 
 // ---------------------------------------------------------------------------

@@ -711,12 +711,27 @@ function NotificacoesTeste() {
       const { solicitarPermissao } = await import('@/lib/notifications');
       const token = await solicitarPermissao();
       if (token) {
-        addLog(`✅ Novo token: ${token.slice(0, 20)}...`);
+        addLog(`✅ Novo token obtido: ${token.slice(0, 25)}...`);
+
+        // Verificar via API server-side o que foi salvo
+        addLog('🔍 Verificando no banco via API...');
+        const res = await fetch('/api/notificacoes/token');
+        const data = await res.json();
+        if (data.ok) {
+          addLog(`📱 Total de tokens no banco: ${data.total}`);
+          data.tokens?.forEach((t: string, i: number) => addLog(`  [${i}] ${t}`));
+          // Verificar se este token está lá
+          const thisTokenPrefix = token.slice(0, 25);
+          const found = data.tokens?.some((t: string) => t.startsWith(thisTokenPrefix));
+          addLog(found ? '✅ Token DESTE dispositivo está no banco!' : '❌ Token deste dispositivo NÃO está no banco!');
+        } else {
+          addLog(`⚠️ Erro ao verificar: ${data.error}`);
+        }
 
         // Verificar o SW ativo
         const regs = await navigator.serviceWorker.getRegistrations();
         for (const reg of regs) {
-          addLog(`  SW ativo: ${reg.active?.scriptURL ?? 'nenhum'}`);
+          addLog(`  SW ativo: ${reg.active?.scriptURL?.slice(0, 80) ?? 'nenhum'}`);
         }
 
         // Mostrar tokens no banco
@@ -730,38 +745,20 @@ function NotificacoesTeste() {
   }
 
   async function verTokens() {
-    addLog('🔍 Buscando tokens no banco...');
+    addLog('🔍 Buscando tokens no banco via API...');
     try {
-      const { createBrowserClient } = await import('@supabase/ssr');
-      const sb = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      );
-      const { data: { user } } = await sb.auth.getUser();
-      if (!user) { addLog('❌ Não autenticado.'); return; }
+      const res = await fetch('/api/notificacoes/token');
+      const data = await res.json();
 
-      const { data: profile, error } = await sb
-        .from('profiles')
-        .select('fcm_token')
-        .eq('id', user.id)
-        .single();
-
-      if (error) { addLog(`❌ Erro: ${error.message}`); return; }
-      if (!profile?.fcm_token) { addLog('❌ Nenhum token salvo!'); return; }
-
-      try {
-        const tokens = JSON.parse(profile.fcm_token as string);
-        if (Array.isArray(tokens)) {
-          addLog(`📱 ${tokens.length} token(s) no banco:`);
-          tokens.forEach((t: string, i: number) => {
-            addLog(`  [${i}] ${t.slice(0, 30)}...`);
-          });
-        } else {
-          addLog(`📱 1 token (formato antigo): ${(profile.fcm_token as string).slice(0, 30)}...`);
-        }
-      } catch {
-        addLog(`📱 1 token (string): ${(profile.fcm_token as string).slice(0, 30)}...`);
+      if (!data.ok) {
+        addLog(`❌ Erro: ${data.error}`);
+        return;
       }
+
+      addLog(`📱 ${data.total} token(s) no banco:`);
+      data.tokens?.forEach((t: string, i: number) => {
+        addLog(`  [${i}] ${t}`);
+      });
 
       // Comparar com token deste dispositivo
       try {
@@ -775,11 +772,8 @@ function NotificacoesTeste() {
             serviceWorkerRegistration: reg,
           });
           if (currentToken) {
-            const savedTokens = JSON.parse(profile.fcm_token as string);
-            const found = Array.isArray(savedTokens) 
-              ? savedTokens.includes(currentToken)
-              : savedTokens === currentToken;
             addLog(`🔑 Token DESTE dispositivo: ${currentToken.slice(0, 30)}...`);
+            const found = data.tokens?.some((t: string) => t.startsWith(currentToken.slice(0, 25)));
             addLog(found ? '✅ Token deste dispositivo ESTÁ no banco.' : '❌ Token deste dispositivo NÃO está no banco! Clique Re-registrar.');
           }
         }
