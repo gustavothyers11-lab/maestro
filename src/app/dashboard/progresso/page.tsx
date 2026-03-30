@@ -548,8 +548,30 @@ function NotificacoesTeste() {
       if (token) {
         addLog(`✅ Token FCM obtido: ${token.slice(0, 20)}...`);
         addLog('Token salvo no perfil do Supabase.');
+
+        // Verificar se realmente salvou
+        const { createBrowserClient } = await import('@supabase/ssr');
+        const sb = createBrowserClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        );
+        const { data: { user } } = await sb.auth.getUser();
+        if (user) {
+          const { data: profile, error: profileErr } = await sb
+            .from('profiles')
+            .select('fcm_token')
+            .eq('id', user.id)
+            .single();
+          if (profileErr) {
+            addLog(`⚠️ Erro ao verificar profile: ${profileErr.message}`);
+          } else if (profile?.fcm_token) {
+            addLog(`✅ Confirmado: fcm_token salvo no banco (${(profile.fcm_token as string).slice(0, 20)}...)`);
+          } else {
+            addLog('❌ fcm_token NÃO está no banco! O upsert pode ter falhado por RLS.');
+          }
+        }
       } else {
-        addLog('❌ Não foi possível obter token FCM. Verifique VAPID key e config do Firebase.');
+        addLog('❌ Não foi possível obter token FCM.');
       }
     } catch (err) {
       addLog(`❌ Erro ao registrar: ${err instanceof Error ? err.message : String(err)}`);

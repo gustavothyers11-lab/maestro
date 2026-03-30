@@ -100,6 +100,7 @@ export async function salvarToken(token: string): Promise<void> {
 
   if (error) {
     console.error('[FCM] Erro ao salvar token no Supabase:', error.message);
+    throw new Error(`Erro ao salvar token no Supabase: ${error.message}`);
   }
 }
 
