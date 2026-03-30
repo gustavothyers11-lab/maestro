@@ -162,14 +162,19 @@ async function handleConquista(
     });
   }
 
-  const enviado = await enviarPush({
+  const resultado = await enviarPush({
     token: profile.fcm_token,
     titulo,
     corpo: mensagem,
     url: '/dashboard/missoes',
   });
 
-  return NextResponse.json({ ok: true, enviado });
+  return NextResponse.json({
+    ok: resultado.ok,
+    enviado: resultado.ok,
+    erroEnvio: resultado.erro ?? null,
+    tokenUsado: (profile.fcm_token as string).slice(0, 20) + '...',
+  });
 }
 
 async function handleMissaoCompleta(
