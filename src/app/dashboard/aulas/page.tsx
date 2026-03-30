@@ -99,6 +99,20 @@ async function getFFmpeg(): Promise<FFmpeg> {
   return ffmpegLoadPromise;
 }
 
+async function blobParaBase64(blob: Blob): Promise<string> {
+  const buffer = await blob.arrayBuffer();
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+
+  return btoa(binary);
+}
+
 // ---------------------------------------------------------------------------
 // Stepper visual
 // ---------------------------------------------------------------------------
@@ -268,7 +282,28 @@ function EtapaTranscricao({
     });
     const urlData = await urlRes.json() as { signedUrl?: string; path?: string; error?: string };
     if (!urlRes.ok || !urlData.signedUrl || !urlData.path) {
-      throw new Error(urlData.error || 'Não foi possível iniciar o upload.');
+      setStatusUpload('Transcrevendo áudio...');
+      const audioBase64 = await blobParaBase64(file);
+      const fallbackRes = await fetch('/api/transcricao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          audioBase64,
+          ext: extensaoPreferida,
+          mime: file.type || (extensaoPreferida === 'wav' ? 'audio/wav' : extensaoPreferida === 'm4a' ? 'audio/mp4' : 'audio/mpeg'),
+        }),
+      });
+
+      const fallbackPayload = await fallbackRes.json();
+      if (!fallbackRes.ok) {
+        throw new Error(fallbackPayload.error || urlData.error || `Erro ${fallbackRes.status} ao transcrever.`);
+      }
+
+      const textoFallback = typeof fallbackPayload.transcricao === 'string' ? fallbackPayload.transcricao : '';
+      setTranscricao(textoFallback);
+      setSucessoUpload(`Transcrição concluída! ${textoFallback.length.toLocaleString('pt-BR')} caracteres extraídos`);
+      requestAnimationFrame(() => { transcricaoRef.current?.focus(); });
+      return;
     }
 
     // 2. PUT puro — body é o File diretamente, WebKit lida nativamente
