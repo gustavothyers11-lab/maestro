@@ -11,7 +11,10 @@ export const metadata: Metadata = {
   title: "Maestro",
   description: "Seu assistente de estudos com flashcards e repetição espaçada",
   icons: {
-    icon: "/icon-192.png",
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+    ],
     apple: "/icon-192.png",
   },
   manifest: "/manifest.json",
