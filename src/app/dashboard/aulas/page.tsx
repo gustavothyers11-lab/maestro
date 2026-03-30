@@ -611,7 +611,6 @@ function EtapaTranscricao({
           onChange={(e) => setTranscricao(e.target.value)}
           placeholder="Cole aqui a transcrição completa da aula em espanhol…"
           rows={10}
-          maxLength={12000}
           className="
             w-full rounded-xl border border-gray-300 dark:border-white/10
             bg-white dark:bg-white/5
@@ -623,7 +622,7 @@ function EtapaTranscricao({
           "
         />
         <p className="text-right text-[11px] tabular-nums text-gray-400 dark:text-white/30">
-          {transcricao.length.toLocaleString()} / 12.000
+          {transcricao.length.toLocaleString()} caracteres
         </p>
       </div>
 
