@@ -29,49 +29,47 @@ export async function solicitarPermissao(): Promise<string | null> {
 
   const messaging = await getFirebaseMessaging();
   if (!messaging) {
-    console.warn('[FCM] Messaging não suportado neste navegador.');
-    return null;
+    throw new Error('Firebase Messaging não suportado neste navegador.');
   }
 
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') {
-    console.info('[FCM] Permissão negada pelo usuário.');
-    return null;
+    throw new Error(`Permissão negada: ${permission}`);
   }
 
   const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
   if (!vapidKey) {
-    console.error('[FCM] NEXT_PUBLIC_FIREBASE_VAPID_KEY não configurada.');
-    return null;
+    throw new Error('NEXT_PUBLIC_FIREBASE_VAPID_KEY não está configurada no deploy.');
   }
 
-  try {
-    const swConfig = new URLSearchParams({
-      apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? '',
-      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? '',
-      messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ?? '',
-      appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID ?? '',
-    });
+  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? '';
+  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? '';
+  const messagingSenderId = process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ?? '';
+  const appId = process.env.NEXT_PUBLIC_FIREBASE_APP_ID ?? '';
 
-    // Registra o service worker explicitamente
-    const registration = await navigator.serviceWorker.register(
-      `/firebase-messaging-sw.js?${swConfig.toString()}`,
+  if (!apiKey || !projectId || !messagingSenderId || !appId) {
+    throw new Error(
+      `Firebase config incompleta: apiKey=${apiKey ? 'OK' : 'VAZIO'}, projectId=${projectId ? 'OK' : 'VAZIO'}, senderId=${messagingSenderId ? 'OK' : 'VAZIO'}, appId=${appId ? 'OK' : 'VAZIO'}`,
     );
-
-    const token = await getToken(messaging, {
-      vapidKey,
-      serviceWorkerRegistration: registration,
-    });
-
-    if (token) {
-      await salvarToken(token);
-    }
-
-    return token;
-  } catch (err) {
-    console.error('[FCM] Erro ao obter token:', err);
-    return null;
   }
+
+  const swConfig = new URLSearchParams({ apiKey, projectId, messagingSenderId, appId });
+
+  const registration = await navigator.serviceWorker.register(
+    `/firebase-messaging-sw.js?${swConfig.toString()}`,
+  );
+
+  const token = await getToken(messaging, {
+    vapidKey,
+    serviceWorkerRegistration: registration,
+  });
+
+  if (!token) {
+    throw new Error('getToken() retornou vazio. Possível: VAPID key incorreta ou projeto Firebase sem Cloud Messaging ativado.');
+  }
+
+  await salvarToken(token);
+  return token;
 }
 
 // ---------------------------------------------------------------------------
