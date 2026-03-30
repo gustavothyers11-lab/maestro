@@ -81,6 +81,7 @@ export async function solicitarPermissao(): Promise<string | null> {
 
 /**
  * Salva ou atualiza o FCM token do usuário autenticado em `profiles`.
+ * Armazena como JSON array para suportar múltiplos dispositivos.
  */
 export async function salvarToken(token: string): Promise<void> {
   const supabase = criarSupabase();
@@ -94,9 +95,33 @@ export async function salvarToken(token: string): Promise<void> {
     return;
   }
 
+  // Buscar tokens existentes
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('fcm_token')
+    .eq('id', user.id)
+    .single();
+
+  let tokens: string[] = [];
+  if (profile?.fcm_token) {
+    try {
+      const parsed = JSON.parse(profile.fcm_token);
+      tokens = Array.isArray(parsed) ? parsed : [profile.fcm_token];
+    } catch {
+      // Token antigo (string simples) — migrar para array
+      tokens = [profile.fcm_token];
+    }
+  }
+
+  // Adicionar novo token se não existir (max 5 dispositivos)
+  if (!tokens.includes(token)) {
+    tokens.push(token);
+    if (tokens.length > 5) tokens.shift(); // remove o mais antigo
+  }
+
   const { error } = await supabase
     .from('profiles')
-    .upsert({ id: user.id, fcm_token: token }, { onConflict: 'id' });
+    .upsert({ id: user.id, fcm_token: JSON.stringify(tokens) }, { onConflict: 'id' });
 
   if (error) {
     console.error('[FCM] Erro ao salvar token no Supabase:', error.message);

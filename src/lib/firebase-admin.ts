@@ -87,8 +87,8 @@ export async function enviarPushMultiplo(
   titulo: string,
   corpo: string,
   url?: string,
-): Promise<{ sucesso: number; falha: number }> {
-  if (tokens.length === 0) return { sucesso: 0, falha: 0 };
+): Promise<{ sucesso: number; falha: number; tokensInvalidos: string[] }> {
+  if (tokens.length === 0) return { sucesso: 0, falha: 0, tokensInvalidos: [] };
 
   try {
     const messaging = getAdminMessaging();
@@ -101,12 +101,76 @@ export async function enviarPushMultiplo(
       },
     });
 
+    // Coletar tokens inválidos para limpeza
+    const tokensInvalidos: string[] = [];
+    resposta.responses.forEach((r, i) => {
+      if (!r.success && r.error?.code === 'messaging/registration-token-not-registered') {
+        tokensInvalidos.push(tokens[i]);
+      }
+    });
+
     return {
       sucesso: resposta.successCount,
       falha: resposta.failureCount,
+      tokensInvalidos,
     };
   } catch (err) {
     console.error('[FCM Admin] Erro ao enviar push múltiplo:', err);
-    return { sucesso: 0, falha: tokens.length };
+    return { sucesso: 0, falha: tokens.length, tokensInvalidos: [] };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers para tokens multi-dispositivo
+// ---------------------------------------------------------------------------
+
+/**
+ * Parseia o campo fcm_token que pode ser uma string simples ou JSON array.
+ */
+export function parseTokens(fcmToken: string | null | undefined): string[] {
+  if (!fcmToken) return [];
+  try {
+    const parsed = JSON.parse(fcmToken);
+    if (Array.isArray(parsed)) return parsed.filter((t) => typeof t === 'string' && t.length > 0);
+    return [fcmToken];
+  } catch {
+    return fcmToken.length > 0 ? [fcmToken] : [];
+  }
+}
+
+/**
+ * Envia push para todos os tokens de um usuário (multi-dispositivo).
+ * Retorna resultado agregado.
+ */
+export async function enviarPushParaUsuario(
+  tokens: string[],
+  titulo: string,
+  corpo: string,
+  url?: string,
+): Promise<{ ok: boolean; enviados: number; falhas: number; messageIds: string[]; erros: string[]; tokensInvalidos: string[] }> {
+  if (tokens.length === 0) {
+    return { ok: false, enviados: 0, falhas: 0, messageIds: [], erros: ['Sem tokens'], tokensInvalidos: [] };
+  }
+
+  const messageIds: string[] = [];
+  const erros: string[] = [];
+  const tokensInvalidos: string[] = [];
+  let enviados = 0;
+  let falhas = 0;
+
+  for (const token of tokens) {
+    const resultado = await enviarPush({ token, titulo, corpo, url });
+    if (resultado.ok) {
+      enviados++;
+      if (resultado.messageId) messageIds.push(resultado.messageId);
+    } else {
+      falhas++;
+      if (resultado.erro) erros.push(resultado.erro);
+      if (resultado.erro?.includes('not-registered') || resultado.erro?.includes('invalid-registration-token')) {
+        tokensInvalidos.push(token);
+      }
+    }
+  }
+
+  return { ok: enviados > 0, enviados, falhas, messageIds, erros, tokensInvalidos };
 }

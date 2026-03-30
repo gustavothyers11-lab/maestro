@@ -2,7 +2,7 @@
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { enviarPush, enviarPushMultiplo } from '@/lib/firebase-admin';
+import { enviarPush, enviarPushMultiplo, enviarPushParaUsuario, parseTokens } from '@/lib/firebase-admin';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -120,9 +120,10 @@ async function handleLembrete(
 
   const cardsMsg = (totalVencidos ?? 0) > 0 ? `${totalVencidos} cards` : 'cards';
 
-  const tokens = alvos.map((p) => p.fcm_token as string);
+  // Extrair todos os tokens de todos os usuários alvo
+  const allTokens = alvos.flatMap((p) => parseTokens(p.fcm_token as string));
   const resultado = await enviarPushMultiplo(
-    tokens,
+    allTokens,
     '🔥 Não perca seu streak!',
     `Você tem ${cardsMsg} para revisar hoje. Mantenha sua sequência!`,
     '/dashboard/estudar',
@@ -152,7 +153,8 @@ async function handleConquista(
     });
   }
 
-  if (!profile?.fcm_token) {
+  const tokens = parseTokens(profile?.fcm_token);
+  if (tokens.length === 0) {
     return NextResponse.json({
       ok: true,
       enviado: false,
@@ -162,19 +164,22 @@ async function handleConquista(
     });
   }
 
-  const resultado = await enviarPush({
-    token: profile.fcm_token,
-    titulo,
-    corpo: mensagem,
-    url: '/dashboard/missoes',
-  });
+  const resultado = await enviarPushParaUsuario(tokens, titulo, mensagem, '/dashboard/missoes');
+
+  // Limpar tokens inválidos
+  if (resultado.tokensInvalidos.length > 0) {
+    const tokensLimpos = tokens.filter((t) => !resultado.tokensInvalidos.includes(t));
+    await supabase.from('profiles').update({ fcm_token: JSON.stringify(tokensLimpos) }).eq('id', userId);
+  }
 
   return NextResponse.json({
     ok: resultado.ok,
     enviado: resultado.ok,
-    erroEnvio: resultado.erro ?? null,
-    messageId: resultado.messageId ?? null,
-    tokenUsado: (profile.fcm_token as string).slice(0, 20) + '...',
+    enviados: resultado.enviados,
+    falhas: resultado.falhas,
+    erroEnvio: resultado.erros.length > 0 ? resultado.erros.join('; ') : null,
+    messageIds: resultado.messageIds,
+    totalTokens: tokens.length,
   });
 }
 
@@ -190,18 +195,24 @@ async function handleMissaoCompleta(
     .eq('id', userId)
     .single();
 
-  if (!profile?.fcm_token) {
+  const tokens = parseTokens(profile?.fcm_token);
+  if (tokens.length === 0) {
     return NextResponse.json({ ok: true, enviado: false, motivo: 'Sem FCM token.' });
   }
 
-  const enviado = await enviarPush({
-    token: profile.fcm_token,
-    titulo: '🏆 Missão concluída!',
-    corpo: `${tituloMissao} — +${xp} XP ganhos! Continue assim!`,
-    url: '/dashboard/missoes',
-  });
+  const resultado = await enviarPushParaUsuario(
+    tokens,
+    '🏆 Missão concluída!',
+    `${tituloMissao} — +${xp} XP ganhos! Continue assim!`,
+    '/dashboard/missoes',
+  );
 
-  return NextResponse.json({ ok: true, enviado });
+  if (resultado.tokensInvalidos.length > 0) {
+    const tokensLimpos = tokens.filter((t) => !resultado.tokensInvalidos.includes(t));
+    await supabase.from('profiles').update({ fcm_token: JSON.stringify(tokensLimpos) }).eq('id', userId);
+  }
+
+  return NextResponse.json({ ok: true, enviados: resultado.enviados, falhas: resultado.falhas });
 }
 
 async function handleStreak(
@@ -215,7 +226,8 @@ async function handleStreak(
     .eq('id', userId)
     .single();
 
-  if (!profile?.fcm_token) {
+  const tokens = parseTokens(profile?.fcm_token);
+  if (tokens.length === 0) {
     return NextResponse.json({ ok: true, enviado: false, motivo: 'Sem FCM token.' });
   }
 
@@ -229,12 +241,12 @@ async function handleStreak(
 
   const corpo = marcos[dias] ?? `🔥 ${dias} dias seguidos! Continue assim!`;
 
-  const enviado = await enviarPush({
-    token: profile.fcm_token,
-    titulo: '🔥 Streak incrível!',
-    corpo,
-    url: '/dashboard',
-  });
+  const resultado = await enviarPushParaUsuario(tokens, '🔥 Streak incrível!', corpo, '/dashboard');
 
-  return NextResponse.json({ ok: true, enviado });
+  if (resultado.tokensInvalidos.length > 0) {
+    const tokensLimpos = tokens.filter((t) => !resultado.tokensInvalidos.includes(t));
+    await supabase.from('profiles').update({ fcm_token: JSON.stringify(tokensLimpos) }).eq('id', userId);
+  }
+
+  return NextResponse.json({ ok: true, enviados: resultado.enviados, falhas: resultado.falhas });
 }

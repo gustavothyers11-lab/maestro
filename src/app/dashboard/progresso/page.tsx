@@ -607,7 +607,17 @@ function NotificacoesTeste() {
           if (profileErr) {
             addLog(`⚠️ Erro ao verificar profile: ${profileErr.message}`);
           } else if (profile?.fcm_token) {
-            addLog(`✅ Confirmado: fcm_token salvo no banco (${(profile.fcm_token as string).slice(0, 20)}...)`);
+            try {
+              const tokens = JSON.parse(profile.fcm_token as string);
+              if (Array.isArray(tokens)) {
+                addLog(`✅ ${tokens.length} token(s) salvos no banco:`);
+                tokens.forEach((t: string, i: number) => addLog(`   [${i}] ${t.slice(0, 25)}...`));
+              } else {
+                addLog(`✅ Token salvo (formato antigo): ${(profile.fcm_token as string).slice(0, 20)}...`);
+              }
+            } catch {
+              addLog(`✅ Token salvo (string): ${(profile.fcm_token as string).slice(0, 20)}...`);
+            }
           } else {
             addLog('❌ fcm_token NÃO está no banco! O upsert pode ter falhado por RLS.');
           }
