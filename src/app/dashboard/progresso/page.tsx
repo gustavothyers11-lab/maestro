@@ -782,10 +782,25 @@ function NotificacoesTeste() {
         return;
       }
 
-      addLog(`📱 ${data.total} token(s) no banco:`);
+      addLog(`── MINHA CONTA (${data.userId?.slice(0, 8)}...) ──`);
+      addLog(`📱 ${data.total} token(s) desta conta:`);
       data.tokens?.forEach((t: string, i: number) => {
         addLog(`  [${i}] ${t}`);
       });
+
+      // Info do sistema inteiro
+      if (data.sistema) {
+        addLog(`── SISTEMA (broadcast alcança todos) ──`);
+        addLog(`👥 Usuários com token: ${data.sistema.usuariosComToken}`);
+        addLog(`📱 Total de tokens no sistema: ${data.sistema.totalTokens}`);
+        if (data.sistema.outrosUsuarios?.length > 0) {
+          data.sistema.outrosUsuarios.forEach((u: { userId: string; tokens: number }) => {
+            addLog(`  👤 ${u.userId} → ${u.tokens} token(s)`);
+          });
+        } else {
+          addLog(`  ⚠️ Nenhum outro usuário com token. Peça para os outros ativarem permissão.`);
+        }
+      }
 
       // Comparar com token deste dispositivo
       try {

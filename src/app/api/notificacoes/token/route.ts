@@ -105,6 +105,7 @@ export async function GET() {
     return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
   }
 
+  // Tokens deste usuário
   const { data: profile } = await supabase
     .from('profiles')
     .select('fcm_token')
@@ -121,10 +122,44 @@ export async function GET() {
     }
   }
 
+  // Todos os usuários com token no sistema (para visibilidade do broadcast)
+  const { data: allProfiles } = await supabase
+    .from('profiles')
+    .select('id, fcm_token')
+    .not('fcm_token', 'is', null);
+
+  let totalUsuariosComToken = 0;
+  let totalTokensSistema = 0;
+  const outrosUsuarios: { userId: string; tokens: number }[] = [];
+
+  if (allProfiles) {
+    for (const p of allProfiles) {
+      let pTokens: string[] = [];
+      try {
+        const parsed = JSON.parse(p.fcm_token);
+        pTokens = Array.isArray(parsed) ? parsed.filter((t: unknown) => typeof t === 'string' && t.length > 0) : [p.fcm_token];
+      } catch {
+        pTokens = [p.fcm_token];
+      }
+      if (pTokens.length > 0) {
+        totalUsuariosComToken++;
+        totalTokensSistema += pTokens.length;
+        if (p.id !== user.id) {
+          outrosUsuarios.push({ userId: p.id.slice(0, 8) + '...', tokens: pTokens.length });
+        }
+      }
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     userId: user.id,
     total: tokens.length,
     tokens: tokens.map((t) => t.slice(0, 30) + '...'),
+    sistema: {
+      usuariosComToken: totalUsuariosComToken,
+      totalTokens: totalTokensSistema,
+      outrosUsuarios,
+    },
   });
 }
