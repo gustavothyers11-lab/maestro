@@ -704,8 +704,73 @@ function NotificacoesTeste() {
         for (const reg of regs) {
           addLog(`  SW ativo: ${reg.active?.scriptURL ?? 'nenhum'}`);
         }
+
+        // Mostrar tokens no banco
+        await verTokens();
       } else {
         addLog('❌ Token vazio após re-registro.');
+      }
+    } catch (err) {
+      addLog(`❌ Erro: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  async function verTokens() {
+    addLog('🔍 Buscando tokens no banco...');
+    try {
+      const { createBrowserClient } = await import('@supabase/ssr');
+      const sb = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      );
+      const { data: { user } } = await sb.auth.getUser();
+      if (!user) { addLog('❌ Não autenticado.'); return; }
+
+      const { data: profile, error } = await sb
+        .from('profiles')
+        .select('fcm_token')
+        .eq('id', user.id)
+        .single();
+
+      if (error) { addLog(`❌ Erro: ${error.message}`); return; }
+      if (!profile?.fcm_token) { addLog('❌ Nenhum token salvo!'); return; }
+
+      try {
+        const tokens = JSON.parse(profile.fcm_token as string);
+        if (Array.isArray(tokens)) {
+          addLog(`📱 ${tokens.length} token(s) no banco:`);
+          tokens.forEach((t: string, i: number) => {
+            addLog(`  [${i}] ${t.slice(0, 30)}...`);
+          });
+        } else {
+          addLog(`📱 1 token (formato antigo): ${(profile.fcm_token as string).slice(0, 30)}...`);
+        }
+      } catch {
+        addLog(`📱 1 token (string): ${(profile.fcm_token as string).slice(0, 30)}...`);
+      }
+
+      // Comparar com token deste dispositivo
+      try {
+        const { getToken } = await import('firebase/messaging');
+        const { getFirebaseMessaging } = await import('@/lib/firebase');
+        const messaging = await getFirebaseMessaging();
+        if (messaging) {
+          const reg = await navigator.serviceWorker.ready;
+          const currentToken = await getToken(messaging, {
+            vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
+            serviceWorkerRegistration: reg,
+          });
+          if (currentToken) {
+            const savedTokens = JSON.parse(profile.fcm_token as string);
+            const found = Array.isArray(savedTokens) 
+              ? savedTokens.includes(currentToken)
+              : savedTokens === currentToken;
+            addLog(`🔑 Token DESTE dispositivo: ${currentToken.slice(0, 30)}...`);
+            addLog(found ? '✅ Token deste dispositivo ESTÁ no banco.' : '❌ Token deste dispositivo NÃO está no banco! Clique Re-registrar.');
+          }
+        }
+      } catch (err) {
+        addLog(`⚠️ Não conseguiu verificar token atual: ${err instanceof Error ? err.message : String(err)}`);
       }
     } catch (err) {
       addLog(`❌ Erro: ${err instanceof Error ? err.message : String(err)}`);
@@ -749,6 +814,12 @@ function NotificacoesTeste() {
                 className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 transition-colors"
               >
                 🔄 Re-registrar SW + Token
+              </button>
+              <button
+                onClick={verTokens}
+                className="rounded-lg bg-gray-600 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 transition-colors"
+              >
+                🔍 Ver Tokens no Banco
               </button>
             </div>
           </div>
