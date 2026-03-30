@@ -699,6 +699,27 @@ function NotificacoesTeste() {
   }
 
   async function forcarReregistro() {
+    addLog('🔄 Capturando token atual antes de re-registrar...');
+    let oldToken: string | null = null;
+    try {
+      // Pegar token atual (antes de destruir o SW)
+      const { getToken: getT } = await import('firebase/messaging');
+      const { getFirebaseMessaging } = await import('@/lib/firebase');
+      const msg = await getFirebaseMessaging();
+      if (msg) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        if (regs.length > 0) {
+          oldToken = await getT(msg, {
+            vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
+            serviceWorkerRegistration: regs[0],
+          });
+          if (oldToken) addLog(`  Token antigo: ${oldToken.slice(0, 30)}...`);
+        }
+      }
+    } catch {
+      addLog('  ⚠️ Não conseguiu capturar token antigo (ok, continua)');
+    }
+
     addLog('🔄 Removendo service workers antigos...');
     try {
       const registrations = await navigator.serviceWorker.getRegistrations();
@@ -708,20 +729,26 @@ function NotificacoesTeste() {
       }
       addLog('Re-registrando com novo SW...');
 
-      const { solicitarPermissao } = await import('@/lib/notifications');
+      const { solicitarPermissao, salvarToken } = await import('@/lib/notifications');
       const token = await solicitarPermissao();
       if (token) {
-        addLog(`✅ Novo token obtido: ${token.slice(0, 25)}...`);
+        addLog(`✅ Novo token obtido: ${token.slice(0, 30)}...`);
+
+        // Se temos o token antigo e é diferente do novo, substituir no banco
+        if (oldToken && oldToken !== token) {
+          addLog(`🔄 Substituindo token antigo no banco...`);
+          const saveResult = await salvarToken(token, oldToken);
+          addLog(`  Antes: ${saveResult.tokensBefore} → Depois: ${saveResult.tokensAfter}`);
+        }
 
         // Verificar via API server-side o que foi salvo
         addLog('🔍 Verificando no banco via API...');
         const res = await fetch('/api/notificacoes/token');
         const data = await res.json();
         if (data.ok) {
-          addLog(`📱 Total de tokens no banco: ${data.total}`);
+          addLog(`📱 Total de tokens no banco: ${data.total} (userId: ${data.userId?.slice(0, 8)}...)`);
           data.tokens?.forEach((t: string, i: number) => addLog(`  [${i}] ${t}`));
-          // Verificar se este token está lá
-          const thisTokenPrefix = token.slice(0, 25);
+          const thisTokenPrefix = token.slice(0, 30);
           const found = data.tokens?.some((t: string) => t.startsWith(thisTokenPrefix));
           addLog(found ? '✅ Token DESTE dispositivo está no banco!' : '❌ Token deste dispositivo NÃO está no banco!');
         } else {

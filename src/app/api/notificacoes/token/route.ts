@@ -12,14 +12,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
   }
 
-  let body: { token?: string };
+  let body: { token?: string; oldToken?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: 'JSON inválido.' }, { status: 400 });
   }
 
-  const { token } = body;
+  const { token, oldToken } = body;
   if (!token || typeof token !== 'string' || token.length < 10) {
     return NextResponse.json({ error: 'Token inválido.' }, { status: 400 });
   }
@@ -43,10 +43,15 @@ export async function POST(request: Request) {
 
   const tokensBefore = [...tokens];
 
-  // Adicionar novo token se não existir (max 5 dispositivos)
+  // Remover token antigo se fornecido (usado no re-registro)
+  if (oldToken && typeof oldToken === 'string') {
+    tokens = tokens.filter((t) => t !== oldToken);
+  }
+
+  // Adicionar novo token se não existir (max 10 dispositivos)
   if (!tokens.includes(token)) {
     tokens.push(token);
-    if (tokens.length > 5) tokens.shift();
+    if (tokens.length > 10) tokens.shift();
   }
 
   // Salvar
@@ -82,10 +87,12 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ok: true,
+    userId: user.id,
     tokensBefore: tokensBefore.length,
     tokensAfter: tokensAfter.length,
     novoTokenSalvo,
-    tokensPreview: tokensAfter.map((t) => t.slice(0, 20) + '...'),
+    oldTokenRemovido: oldToken ? !tokensAfter.includes(oldToken) : null,
+    tokensPreview: tokensAfter.map((t) => t.slice(0, 30) + '...'),
   });
 }
 
@@ -116,8 +123,8 @@ export async function GET() {
 
   return NextResponse.json({
     ok: true,
+    userId: user.id,
     total: tokens.length,
-    tokens: tokens.map((t) => t.slice(0, 25) + '...'),
-    raw: profile?.fcm_token?.slice(0, 200),
+    tokens: tokens.map((t) => t.slice(0, 30) + '...'),
   });
 }

@@ -81,12 +81,13 @@ export async function solicitarPermissao(): Promise<string | null> {
 
 /**
  * Salva o FCM token via API server-side para evitar race conditions.
+ * Se oldToken é fornecido, remove-o do array (usado no re-registro).
  */
-export async function salvarToken(token: string): Promise<{ tokensBefore: number; tokensAfter: number; novoTokenSalvo: boolean }> {
+export async function salvarToken(token: string, oldToken?: string): Promise<{ tokensBefore: number; tokensAfter: number; novoTokenSalvo: boolean }> {
   const res = await fetch('/api/notificacoes/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token }),
+    body: JSON.stringify({ token, oldToken }),
   });
 
   const data = await res.json();
