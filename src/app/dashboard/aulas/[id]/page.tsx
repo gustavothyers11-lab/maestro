@@ -170,31 +170,22 @@ export default function AulaDetalhePage() {
     setErro('');
 
     try {
-      const uploadUrlRes = await fetch('/api/aulas/material-upload-url', {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('aulaId', aulaId);
+
+      const uploadRes = await fetch('/api/aulas/material-upload-url', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aulaId, fileName: file.name }),
+        body: formData,
       });
-      const uploadUrlData = await uploadUrlRes.json().catch(() => ({}));
+      const uploadData = await uploadRes.json().catch(() => ({}));
 
-      if (!uploadUrlRes.ok || !uploadUrlData.signedUrl || !uploadUrlData.publicUrl) {
-        throw new Error(uploadUrlData.error || 'Não foi possível iniciar o upload do material.');
-      }
-
-      const putRes = await fetch(uploadUrlData.signedUrl as string, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': file.type || 'application/octet-stream',
-        },
-        body: file,
-      });
-
-      if (!putRes.ok) {
-        throw new Error(`Erro ao enviar arquivo (${putRes.status}).`);
+      if (!uploadRes.ok || !uploadData.publicUrl) {
+        throw new Error(uploadData.error || 'Não foi possível enviar o material.');
       }
 
       setArquivoMaterial(file);
-      setUrlMaterial(uploadUrlData.publicUrl as string);
+      setUrlMaterial(uploadData.publicUrl as string);
 
       if (!tituloMaterial.trim()) {
         const fallbackTitle = file.name.replace(/\.[^.]+$/, '');
