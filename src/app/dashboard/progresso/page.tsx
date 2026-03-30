@@ -602,9 +602,9 @@ function NotificacoesTeste() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        addLog(`❌ Erro ${res.status}: ${data.error || JSON.stringify(data)}`);
+        addLog(`❌ Erro ${res.status}: ${JSON.stringify(data)}`);
       } else if (data.enviado === false) {
-        addLog(`⚠️ Não enviado: ${data.motivo || 'sem token FCM no perfil'}`);
+        addLog(`⚠️ Não enviado: ${JSON.stringify(data)}`);
       } else {
         addLog(`✅ Push enviado! ${JSON.stringify(data)}`);
       }

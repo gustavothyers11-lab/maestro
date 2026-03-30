@@ -137,14 +137,29 @@ async function handleConquista(
   titulo: string,
   mensagem: string,
 ) {
-  const { data: profile } = await supabase
+  const { data: profile, error: profileErr } = await supabase
     .from('profiles')
     .select('fcm_token')
     .eq('id', userId)
     .single();
 
+  if (profileErr) {
+    return NextResponse.json({
+      ok: false,
+      enviado: false,
+      motivo: `Erro ao buscar profile: ${profileErr.message} (code: ${profileErr.code})`,
+      userId,
+    });
+  }
+
   if (!profile?.fcm_token) {
-    return NextResponse.json({ ok: true, enviado: false, motivo: 'Sem FCM token.' });
+    return NextResponse.json({
+      ok: true,
+      enviado: false,
+      motivo: 'Sem FCM token no perfil.',
+      userId,
+      profileEncontrado: !!profile,
+    });
   }
 
   const enviado = await enviarPush({
