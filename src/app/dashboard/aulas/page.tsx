@@ -99,18 +99,73 @@ async function getFFmpeg(): Promise<FFmpeg> {
   return ffmpegLoadPromise;
 }
 
-async function blobParaBase64(blob: Blob): Promise<string> {
-  const buffer = await blob.arrayBuffer();
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
+/**
+ * Converte qualquer arquivo de áudio (M4A, MP3, etc.) para WAV 16kHz mono
+ * usando a Web Audio API nativa do navegador.
+ * Safari iOS decodifica AAC/M4A nativamente — é formato da Apple.
+ */
+async function converterParaWavNoBrowser(file: File): Promise<Blob> {
+  const arrayBuf = await file.arrayBuffer();
+  const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
 
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
+  try {
+    const decoded = await audioCtx.decodeAudioData(arrayBuf);
+
+    // Resample para 16kHz mono (Whisper prefere 16kHz)
+    const sampleRate = 16000;
+    const offline = new OfflineAudioContext(1, Math.ceil(decoded.duration * sampleRate), sampleRate);
+    const source = offline.createBufferSource();
+    source.buffer = decoded;
+    source.connect(offline.destination);
+    source.start(0);
+
+    const rendered = await offline.startRendering();
+    const pcm = rendered.getChannelData(0);
+
+    // Montar WAV manualmente (header + PCM 16-bit)
+    const numSamples = pcm.length;
+    const bytesPerSample = 2;
+    const dataSize = numSamples * bytesPerSample;
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+
+    // RIFF header
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeString(view, 8, 'WAVE');
+
+    // fmt chunk
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);            // chunk size
+    view.setUint16(20, 1, true);             // PCM
+    view.setUint16(22, 1, true);             // mono
+    view.setUint32(24, sampleRate, true);     // sample rate
+    view.setUint32(28, sampleRate * bytesPerSample, true); // byte rate
+    view.setUint16(32, bytesPerSample, true); // block align
+    view.setUint16(34, 16, true);            // bits per sample
+
+    // data chunk
+    writeString(view, 36, 'data');
+    view.setUint32(40, dataSize, true);
+
+    // PCM float32 → int16
+    let offset = 44;
+    for (let i = 0; i < numSamples; i++) {
+      const s = Math.max(-1, Math.min(1, pcm[i]));
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      offset += 2;
+    }
+
+    return new Blob([buffer], { type: 'audio/wav' });
+  } finally {
+    await audioCtx.close();
   }
+}
 
-  return btoa(binary);
+function writeString(view: DataView, offset: number, str: string) {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -266,65 +321,29 @@ function EtapaTranscricao({
     setTamanhoMp3Mb(null);
   }, []);
 
-  // Abordagem iOS: pede uma signed upload URL ao servidor (sem RLS),
-  // faz um PUT puro com o File como body (nenhum FormData/ArrayBuffer no JS),
-  // depois o servidor baixa e transcreve — evita DOMException do WebKit.
+  // Abordagem iOS: converte para WAV no browser (Web Audio API nativa)
+  // e envia como FormData. Safari decodifica AAC/M4A nativamente.
   const transcreverViaStorage = useCallback(async (
     file: File,
-    extensaoPreferida: 'mp3' | 'm4a' | 'wav' = 'mp3',
   ) => {
-    // 1. Obter signed upload URL do nosso servidor
-    setStatusUpload('Preparando upload seguro...');
-    const urlRes = await fetch('/api/transcricao/upload-url', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ext: extensaoPreferida }),
-    });
-    const urlData = await urlRes.json() as { signedUrl?: string; path?: string; error?: string };
-    if (!urlRes.ok || !urlData.signedUrl || !urlData.path) {
-      setStatusUpload('Transcrevendo áudio...');
-      const audioBase64 = await blobParaBase64(file);
-      const fallbackRes = await fetch('/api/transcricao', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          audioBase64,
-          ext: extensaoPreferida,
-          mime: file.type || (extensaoPreferida === 'wav' ? 'audio/wav' : extensaoPreferida === 'm4a' ? 'audio/mp4' : 'audio/mpeg'),
-        }),
-      });
-
-      const fallbackPayload = await fallbackRes.json();
-      if (!fallbackRes.ok) {
-        throw new Error(fallbackPayload.error || urlData.error || `Erro ${fallbackRes.status} ao transcrever.`);
-      }
-
-      const textoFallback = typeof fallbackPayload.transcricao === 'string' ? fallbackPayload.transcricao : '';
-      setTranscricao(textoFallback);
-      setSucessoUpload(`Transcrição concluída! ${textoFallback.length.toLocaleString('pt-BR')} caracteres extraídos`);
-      requestAnimationFrame(() => { transcricaoRef.current?.focus(); });
-      return;
+    setStatusUpload('Convertendo áudio para WAV...');
+    let wavBlob: Blob;
+    try {
+      wavBlob = await converterParaWavNoBrowser(file);
+    } catch {
+      throw new Error('Não foi possível decodificar o áudio. Tente um arquivo .mp3 ou .wav.');
     }
 
-    // 2. PUT puro — body é o File diretamente, WebKit lida nativamente
-    setStatusUpload('Enviando áudio...');
-    const putRes = await fetch(urlData.signedUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': file.type || 'audio/mpeg' },
-      body: file,
-    });
-    if (!putRes.ok) {
-      throw new Error(`Erro ao enviar áudio (${putRes.status}).`);
-    }
+    setStatusUpload('Enviando para transcrição...');
+    const formData = new FormData();
+    formData.append('audio', new File([wavBlob], 'audio.wav', { type: 'audio/wav' }));
 
-    // 3. Servidor transcreve a partir do path no storage
-    setStatusUpload('Transcrevendo áudio...');
     const res = await fetch('/api/transcricao', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ storagePath: urlData.path, ext: extensaoPreferida }),
+      body: formData,
     });
 
+    setStatusUpload('Transcrevendo áudio...');
     const payload = await res.json();
     if (!res.ok) throw new Error(payload.error || `Erro ${res.status} ao transcrever.`);
 
@@ -382,10 +401,11 @@ function EtapaTranscricao({
       if (isAudioFile) {
         setStatusUpload('Preparando áudio...');
         setTamanhoMp3Mb(arquivoMidia.size / (1024 * 1024));
-        const extPreferida: 'mp3' | 'm4a' | 'wav' = ext === '.wav' ? 'wav' : ext === '.m4a' ? 'm4a' : 'mp3';
         if (isIOS) {
-          await transcreverViaStorage(arquivoMidia, extPreferida);
+          // iOS: converte para WAV no browser e envia como FormData
+          await transcreverViaStorage(arquivoMidia);
         } else {
+          const extPreferida: 'mp3' | 'm4a' | 'wav' = ext === '.wav' ? 'wav' : ext === '.m4a' ? 'm4a' : 'mp3';
           await enviarParaTranscricao(arquivoMidia, extPreferida);
         }
         setStatusUpload('');
