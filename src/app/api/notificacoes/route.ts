@@ -173,6 +173,7 @@ async function handleConquista(
     ok: resultado.ok,
     enviado: resultado.ok,
     erroEnvio: resultado.erro ?? null,
+    messageId: resultado.messageId ?? null,
     tokenUsado: (profile.fcm_token as string).slice(0, 20) + '...',
   });
 }

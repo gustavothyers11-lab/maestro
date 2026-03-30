@@ -632,6 +632,34 @@ function NotificacoesTeste() {
     }
   }
 
+  async function forcarReregistro() {
+    addLog('🔄 Removendo service workers antigos...');
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const reg of registrations) {
+        await reg.unregister();
+        addLog(`  ↳ Removido: ${reg.scope}`);
+      }
+      addLog('Re-registrando com novo SW...');
+
+      const { solicitarPermissao } = await import('@/lib/notifications');
+      const token = await solicitarPermissao();
+      if (token) {
+        addLog(`✅ Novo token: ${token.slice(0, 20)}...`);
+
+        // Verificar o SW ativo
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for (const reg of regs) {
+          addLog(`  SW ativo: ${reg.active?.scriptURL ?? 'nenhum'}`);
+        }
+      } else {
+        addLog('❌ Token vazio após re-registro.');
+      }
+    } catch (err) {
+      addLog(`❌ Erro: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   return (
     <section className="rounded-2xl border border-gray-200/60 dark:border-white/[0.06] bg-white dark:bg-[#1a1a35] overflow-hidden">
       <button
@@ -657,12 +685,20 @@ function NotificacoesTeste() {
           {/* Passo 1 */}
           <div>
             <p className="mb-2 text-sm font-semibold text-gray-700 dark:text-white/70">1. Ativar permissão + registrar token</p>
-            <button
-              onClick={pedirPermissao}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-            >
-              Ativar Permissão
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={pedirPermissao}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+              >
+                Ativar Permissão
+              </button>
+              <button
+                onClick={forcarReregistro}
+                className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 transition-colors"
+              >
+                🔄 Re-registrar SW + Token
+              </button>
+            </div>
           </div>
 
           {/* Passo 2 */}

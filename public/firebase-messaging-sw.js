@@ -4,8 +4,8 @@
 // ou manualmente substituídas no deploy.
 
 /* eslint-disable no-undef */
-importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/12.11.0/firebase-messaging-compat.js');
 
 const swUrl = new URL(self.location.href);
 const query = swUrl.searchParams;
@@ -20,8 +20,14 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+// Debug: captura qualquer evento push bruto (ajuda a diagnosticar)
+self.addEventListener('push', function (event) {
+  console.log('[SW] push event recebido:', event.data ? event.data.text() : '(sem dados)');
+});
+
 // Notificação recebida em background
 messaging.onBackgroundMessage(function (payload) {
+  console.log('[SW] onBackgroundMessage:', JSON.stringify(payload));
   const title = payload.notification?.title || 'Maestro';
   const options = {
     body: payload.notification?.body || '📚 Hora de estudar!',

@@ -49,10 +49,10 @@ export interface PushPayload {
  * Envia uma notificação push para um token FCM específico.
  * Retorna true se enviado com sucesso.
  */
-export async function enviarPush(payload: PushPayload): Promise<{ ok: boolean; erro?: string }> {
+export async function enviarPush(payload: PushPayload): Promise<{ ok: boolean; erro?: string; messageId?: string }> {
   try {
     const messaging = getAdminMessaging();
-    await messaging.send({
+    const messageId = await messaging.send({
       token: payload.token,
       notification: {
         title: payload.titulo,
@@ -70,7 +70,7 @@ export async function enviarPush(payload: PushPayload): Promise<{ ok: boolean; e
       },
       data: payload.data,
     });
-    return { ok: true };
+    return { ok: true, messageId };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[FCM Admin] Erro ao enviar push:', msg);
