@@ -41,9 +41,10 @@ const CATEGORIAS_AULA: Array<{ value: CategoriaAula; label: string; descricao: s
 const ACCEPTED_MEDIA = '.mp3';
 
 // ---------------------------------------------------------------------------
-// Groq URL limit = 25 MB. Usamos 20 MB como margem segura.
+// Groq falha com Internal Server Error em chunks grandes.
+// 4 MB funciona consistentemente (~3 min de áudio a 128kbps).
 // ---------------------------------------------------------------------------
-const MAX_GROQ_URL_BYTES = 20 * 1024 * 1024;
+const MAX_GROQ_URL_BYTES = 4 * 1024 * 1024;
 
 /**
  * Encontra o tamanho do header ID3v2 de um MP3 (se houver).
