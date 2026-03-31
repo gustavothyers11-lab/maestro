@@ -41,80 +41,46 @@ const CATEGORIAS_AULA: Array<{ value: CategoriaAula; label: string; descricao: s
 const ACCEPTED_MEDIA = '.mp3';
 
 // ---------------------------------------------------------------------------
-// Groq falha com Internal Server Error em chunks grandes.
-// 4 MB funciona consistentemente (~3 min de áudio a 128kbps).
+// WAV encoding — decodifica MP3 no browser e gera WAV puro para cada trecho.
+// WAV é formato trivial (header + PCM) e o Whisper aceita sem problemas.
 // ---------------------------------------------------------------------------
-const MAX_GROQ_URL_BYTES = 4 * 1024 * 1024;
+const CHUNK_SECONDS = 120; // 2 minutos por chunk
+const TARGET_SAMPLE_RATE = 16000; // 16kHz mono — ideal para Whisper
 
-/**
- * Encontra o tamanho do header ID3v2 de um MP3 (se houver).
- * Retorna 0 se não tiver ID3v2.
- */
-function tamanhoHeaderId3(bytes: Uint8Array): number {
-  // ID3v2 header: "ID3" + 2 bytes versão + 1 byte flags + 4 bytes tamanho (syncsafe)
-  if (bytes.length < 10) return 0;
-  if (bytes[0] !== 0x49 || bytes[1] !== 0x44 || bytes[2] !== 0x33) return 0; // "ID3"
-
-  const size =
-    ((bytes[6] & 0x7f) << 21) |
-    ((bytes[7] & 0x7f) << 14) |
-    ((bytes[8] & 0x7f) << 7) |
-    (bytes[9] & 0x7f);
-
-  return 10 + size;
+function writeString(view: DataView, offset: number, str: string) {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
 }
 
-/**
- * Encontra o frame sync MP3 mais próximo (para trás) a partir de `pos`.
- */
-function encontrarFrameSync(bytes: Uint8Array, pos: number): number {
-  for (let i = Math.min(pos, bytes.length - 2); i >= 0; i--) {
-    if (bytes[i] === 0xff && (bytes[i + 1] & 0xe0) === 0xe0) {
-      return i;
-    }
-  }
-  return -1;
-}
+function codificarWav(samples: Float32Array, sampleRate: number): Blob {
+  const numSamples = samples.length;
+  const dataSize = numSamples * 2;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
 
-/**
- * Divide um MP3 grande em partes ≤ 20 MB.
- * Cada chunk recebe o header ID3v2 original (se houver) para ser reconhecido pelo Groq.
- */
-function dividirMp3EmPartes(fileBytes: Uint8Array): Blob[] {
-  if (fileBytes.length <= MAX_GROQ_URL_BYTES) {
-    return [new Blob([fileBytes as unknown as BlobPart], { type: 'audio/mpeg' })];
-  }
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(view, 8, 'WAVE');
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
 
-  const id3Len = tamanhoHeaderId3(fileBytes);
-  const id3Header = id3Len > 0 ? fileBytes.slice(0, id3Len) : null;
-  const audioStart = id3Len;
-  const maxAudioPerChunk = MAX_GROQ_URL_BYTES - (id3Header ? id3Header.length : 0);
-
-  const partes: Blob[] = [];
-  let offset = audioStart;
-
-  while (offset < fileBytes.length) {
-    let end = offset + maxAudioPerChunk;
-
-    if (end >= fileBytes.length) {
-      end = fileBytes.length;
-    } else {
-      const syncPos = encontrarFrameSync(fileBytes, end);
-      if (syncPos > offset) {
-        end = syncPos;
-      }
-    }
-
-    const audioData = fileBytes.slice(offset, end);
-    const blobParts = id3Header
-      ? [id3Header as unknown as BlobPart, audioData as unknown as BlobPart]
-      : [audioData as unknown as BlobPart];
-    partes.push(new Blob(blobParts, { type: 'audio/mpeg' }));
-
-    offset = end;
+  let off = 44;
+  for (let i = 0; i < numSamples; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    off += 2;
   }
 
-  return partes;
+  return new Blob([buffer], { type: 'audio/wav' });
 }
 
 // ---------------------------------------------------------------------------
@@ -319,7 +285,7 @@ function EtapaTranscricao({
       const sizeMb = arquivoMidia.size / (1024 * 1024);
       setTamanhoMp3Mb(sizeMb);
 
-      // MP3 ≤ 4MB: envia direto via FormData
+      // MP3 ≤ 4MB: envia direto via FormData (já funciona)
       if (sizeMb <= 4) {
         setStatusUpload('Preparando áudio...');
         await enviarParaTranscricao(arquivoMidia);
@@ -327,26 +293,46 @@ function EtapaTranscricao({
         return;
       }
 
-      // MP3 > 4MB: divide em partes de ~4MB e envia cada uma via FormData
-      // (mesmo caminho que funciona para arquivos pequenos)
-      setStatusUpload('Preparando áudio…');
-      const fileBytes = new Uint8Array(await arquivoMidia.arrayBuffer());
-      const partes = dividirMp3EmPartes(fileBytes);
+      // MP3 > 4MB: decodifica no browser → gera WAV puro para cada trecho de 2 min
+      setStatusUpload('Decodificando áudio…');
+      const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      let audioBuffer: AudioBuffer;
+      try {
+        audioBuffer = await audioCtx.decodeAudioData(await arquivoMidia.arrayBuffer());
+      } finally {
+        await audioCtx.close();
+      }
 
+      const totalDuration = audioBuffer.duration;
+      const numChunks = Math.ceil(totalDuration / CHUNK_SECONDS);
       const transcricoes: string[] = [];
 
-      for (let i = 0; i < partes.length; i++) {
-        const parteMb = (partes[i].size / (1024 * 1024)).toFixed(1);
-        const label = partes.length > 1 ? ` (parte ${i + 1}/${partes.length})` : '';
+      for (let i = 0; i < numChunks; i++) {
+        const startTime = i * CHUNK_SECONDS;
+        const duration = Math.min(CHUNK_SECONDS, totalDuration - startTime);
+        const label = numChunks > 1 ? ` (parte ${i + 1}/${numChunks})` : '';
 
-        setStatusUpload(`Transcrevendo ${parteMb} MB${label}…`);
+        // Reamostrar trecho para 16kHz mono via OfflineAudioContext
+        setStatusUpload(`Preparando áudio${label}…`);
+        const numSamples = Math.ceil(duration * TARGET_SAMPLE_RATE);
+        const offlineCtx = new OfflineAudioContext(1, numSamples, TARGET_SAMPLE_RATE);
+        const source = offlineCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(offlineCtx.destination);
+        source.start(0, startTime, duration);
+        const rendered = await offlineCtx.startRendering();
+        const samples = rendered.getChannelData(0);
 
-        // Envia cada chunk direto via FormData (mesmo caminho dos arquivos ≤4MB)
-        const chunkFile = new File([partes[i]], `audio_p${i + 1}.mp3`, { type: 'audio/mpeg' });
+        // Codificar como WAV 16-bit
+        const wavBlob = codificarWav(samples, TARGET_SAMPLE_RATE);
+        const wavFile = new File([wavBlob], `chunk_${i + 1}.wav`, { type: 'audio/wav' });
+
+        // Enviar via FormData (mesmo caminho dos arquivos pequenos)
+        setStatusUpload(`Transcrevendo${label}…`);
         const formData = new FormData();
-        formData.append('audio', chunkFile, chunkFile.name);
+        formData.append('audio', wavFile, wavFile.name);
 
-        const res = await fetch(`/api/transcricao${partes.length > 1 ? '?skipRefine=1' : ''}`, {
+        const res = await fetch(`/api/transcricao${numChunks > 1 ? '?skipRefine=1' : ''}`, {
           method: 'POST',
           body: formData,
         });
@@ -368,8 +354,8 @@ function EtapaTranscricao({
 
       setTranscricao(textoFinal);
       setSucessoUpload(
-        partes.length > 1
-          ? `Transcrição concluída! ${partes.length} partes — ${textoFinal.length.toLocaleString('pt-BR')} caracteres`
+        numChunks > 1
+          ? `Transcrição concluída! ${numChunks} partes — ${textoFinal.length.toLocaleString('pt-BR')} caracteres`
           : `Transcrição concluída! ${textoFinal.length.toLocaleString('pt-BR')} caracteres extraídos`,
       );
       requestAnimationFrame(() => { transcricaoRef.current?.focus(); });

@@ -58,23 +58,36 @@ async function chamarGroqTranscricao(params: {
   mimeType: string;
 }): Promise<GroqTranscricaoResult> {
   const { apiKey, bytes, fileName, mimeType } = params;
+  const MAX_TENTATIVAS = 3;
 
-  const payload = new FormData();
-  const file = new File([new Uint8Array(bytes)] as any[], fileName, { type: mimeType });
+  for (let tentativa = 0; tentativa < MAX_TENTATIVAS; tentativa++) {
+    if (tentativa > 0) await new Promise(r => setTimeout(r, 2000));
 
-  payload.append('file', file, fileName);
-  payload.append('model', 'whisper-large-v3-turbo');
-  payload.append('language', 'es');
-  payload.append('response_format', 'text');
+    const payload = new FormData();
+    const file = new File([new Uint8Array(bytes)] as any[], fileName, { type: mimeType });
 
-  const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: payload,
-  });
+    payload.append('file', file, fileName);
+    payload.append('model', 'whisper-large-v3-turbo');
+    payload.append('language', 'es');
+    payload.append('response_format', 'text');
 
-  const texto = (await groqRes.text()).trim();
-  return { ok: groqRes.ok, status: groqRes.status, texto };
+    const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: payload,
+    });
+
+    const texto = (await groqRes.text()).trim();
+
+    if (groqRes.ok) return { ok: true, status: groqRes.status, texto };
+
+    // Retry on 500 (Groq internal error)
+    if (groqRes.status >= 500 && tentativa < MAX_TENTATIVAS - 1) continue;
+
+    return { ok: false, status: groqRes.status, texto };
+  }
+
+  return { ok: false, status: 500, texto: 'Groq retornou erro interno após todas as tentativas.' };
 }
 
 // Transcrição via URL (para arquivos grandes no Storage)
