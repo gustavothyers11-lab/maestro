@@ -1,20 +1,8 @@
 {
   "crons": [
     {
-      "path": "/api/cron/notificacoes?tipo=manha",
+      "path": "/api/cron/notificacoes",
       "schedule": "0 12 * * *"
-    },
-    {
-      "path": "/api/cron/notificacoes?tipo=tarde",
-      "schedule": "0 17 * * *"
-    },
-    {
-      "path": "/api/cron/notificacoes?tipo=streak_risco",
-      "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/cron/notificacoes?tipo=resumo_semanal",
-      "schedule": "0 21 * * 0"
     }
   ]
 }
