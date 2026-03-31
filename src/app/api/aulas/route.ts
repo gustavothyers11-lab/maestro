@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { rowToAula, serializeAulaMetadata } from '@/lib/aulas';
 import type { CategoriaAula, StatusAula } from '@/types';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { createAdminClient } from '@/lib/supabase/server';
+import { enviarPushParaUsuario, parseTokens } from '@/lib/firebase-admin';
 
 const CATEGORIAS_VALIDAS: CategoriaAula[] = ['geral', 'gramatica', 'vocabulario', 'conversacao', 'pronuncia'];
 const STATUS_VALIDOS: StatusAula[] = ['pendente', 'em_progresso', 'concluida'];
@@ -15,6 +17,30 @@ async function getAuthUser(supabase: Awaited<ReturnType<typeof createClient>>) {
 
   if (error || !user) return { user: null } as const;
   return { user } as const;
+}
+
+async function notificarAulaCriada(userId: string, tituloAula: string) {
+  try {
+    const admin = createAdminClient();
+    const { data: profile } = await admin
+      .from('profiles')
+      .select('fcm_token')
+      .eq('id', userId)
+      .maybeSingle();
+
+    const tokens = parseTokens((profile?.fcm_token as string | null | undefined) ?? null);
+    if (tokens.length === 0) return;
+
+    const tituloCurto = tituloAula.length > 40 ? `${tituloAula.slice(0, 40)}...` : tituloAula;
+    await enviarPushParaUsuario(
+      tokens,
+      '🎓 Aula criada com sucesso',
+      `Aula "${tituloCurto}" criada. Agora gere cards para estudar.`,
+      '/dashboard/aulas',
+    );
+  } catch {
+    // Notificação não deve bloquear o fluxo principal da API.
+  }
 }
 
 export async function GET() {
@@ -167,5 +193,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Erro ao criar aula: ${msg}` }, { status: 500 });
   }
 
-  return NextResponse.json({ aula: rowToAula(data) }, { status: 201 });
+  const aulaCriada = rowToAula(data);
+  await notificarAulaCriada(user.id, aulaCriada.titulo);
+
+  return NextResponse.json({ aula: aulaCriada }, { status: 201 });
 }

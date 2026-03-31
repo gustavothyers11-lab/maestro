@@ -215,21 +215,21 @@ export async function GET(request: NextRequest) {
     if (enviarLembrete) {
       if (nPendentes > 0 && !idsHoje.has(profile.id)) {
         const msg = pick([
-          `☀️ Bom dia! Você tem ${nPendentes} cards esperando revisão.`,
-          `📚 ${nPendentes} cards prontos — uma sessão rápida faz diferença!`,
-          `🎯 Seus ${nPendentes} cards estão esperando. Que tal estudar agora?`,
-          `⚡ ${nPendentes} cards para revisar. 5 minutos e você mantém o ritmo!`,
-          `🌟 Hora de brilhar! ${nPendentes} cards pendentes no seu baralho.`,
+          `Lembrete diário: você tem ${nPendentes} cards esperando revisão.`,
+          `Lembrete diário: ${nPendentes} cards prontos, uma sessão rápida faz diferença!`,
+          `Lembrete diário: seus ${nPendentes} cards estão esperando.`,
+          `Lembrete diário: ${nPendentes} cards para revisar em 5 minutos.`,
+          `Lembrete diário: ${nPendentes} cards pendentes no seu baralho.`,
         ]);
-        const r = await enviarLimpo(admin, profile, '📚 Hora de estudar!', msg, '/dashboard/estudar');
+        const r = await enviarLimpo(admin, profile, '📚 Lembrete diário', msg, '/dashboard/estudar');
         resultados.lembrete.enviados += r.enviados;
         resultados.lembrete.falhas += r.falhas;
       } else if (nPendentes > 0 && idsHoje.has(profile.id)) {
         const msg = pick([
-          `💪 Boa! Já estudou hoje, mas ainda tem ${nPendentes} cards. Bora zerar?`,
-          `🔥 Você está no ritmo! Mais ${nPendentes} cards e o dia está completo.`,
+          `Lembrete diário: você já estudou, mas ainda tem ${nPendentes} cards.`,
+          `Lembrete diário: mais ${nPendentes} cards e o dia está completo.`,
         ]);
-        const r = await enviarLimpo(admin, profile, '💪 Continue assim!', msg, '/dashboard/estudar');
+        const r = await enviarLimpo(admin, profile, '📚 Lembrete diário', msg, '/dashboard/estudar');
         resultados.lembrete.enviados += r.enviados;
         resultados.lembrete.falhas += r.falhas;
       }
@@ -238,11 +238,11 @@ export async function GET(request: NextRequest) {
     // ── 2. STREAK EM RISCO ──────────────────────────────────────────
     if (enviarStreak && idsOntem.has(profile.id) && !idsHoje.has(profile.id)) {
       const msg = pick([
-        '⏰ Seu streak acaba à meia-noite! Revise pelo menos 1 card.',
-        '🔥 Não deixe seu streak morrer! Falta pouco para fechar o dia.',
-        '⚠️ Streak em perigo! Uma revisão rápida salva sua sequência.',
+        'Alerta de streak: seu streak acaba à meia-noite, revise pelo menos 1 card.',
+        'Alerta de streak: falta pouco para fechar o dia e manter a sequência.',
+        'Alerta de streak: uma revisão rápida salva sua sequência.',
       ]);
-      const r = await enviarLimpo(admin, profile, '🔥 Streak em perigo!', msg, '/dashboard/estudar');
+      const r = await enviarLimpo(admin, profile, '🔥 Alerta de streak', msg, '/dashboard/estudar');
       resultados.streak.enviados += r.enviados;
       resultados.streak.falhas += r.falhas;
     }
@@ -253,11 +253,11 @@ export async function GET(request: NextRequest) {
       const faltam = metaDiaria - nRevisoesHoje;
       if (faltam > 0 && faltam <= 3) {
         const msg = pick([
-          `🎯 Falta só ${faltam} card${faltam > 1 ? 's' : ''} para bater sua meta de hoje!`,
-          `🚀 Você está quase lá: faltam ${faltam} revisão${faltam > 1 ? 'ões' : ''}.`,
-          `✅ Mais ${faltam} card${faltam > 1 ? 's' : ''} e sua meta diária está concluída!`,
+          `Meta quase concluída: falta só ${faltam} card${faltam > 1 ? 's' : ''} para bater sua meta.`,
+          `Meta quase concluída: faltam ${faltam} revisão${faltam > 1 ? 'ões' : ''}.`,
+          `Meta quase concluída: mais ${faltam} card${faltam > 1 ? 's' : ''} e meta batida.`,
         ]);
-        const r = await enviarLimpo(admin, profile, '🎯 Meta quase batida!', msg, '/dashboard/estudar');
+        const r = await enviarLimpo(admin, profile, '🎯 Meta quase concluída', msg, '/dashboard/estudar');
         resultados.meta_quase.enviados += r.enviados;
         resultados.meta_quase.falhas += r.falhas;
       }
@@ -277,11 +277,11 @@ export async function GET(request: NextRequest) {
       const registroHoje = (streakData ?? []).find((r) => r.data === hojeDataBRT && r.meta_atingida);
       if (registroHoje && marcos.includes(streakAtual)) {
         const msg = pick([
-          `🔥 ${streakAtual} dias seguidos! Sua consistência está incrível.`,
-          `🏆 Você bateu ${streakAtual} dias de sequência. Continue assim!`,
-          `🌟 Parabéns! Streak de ${streakAtual} dias alcançado.`,
+          `Consistência: ${streakAtual} dias seguidos. Sua disciplina está incrível.`,
+          `Consistência: você bateu ${streakAtual} dias de sequência.`,
+          `Consistência: parabéns pelo streak de ${streakAtual} dias.`,
         ]);
-        const r = await enviarLimpo(admin, profile, '🔥 Consistência em alta!', msg, '/dashboard/progresso');
+        const r = await enviarLimpo(admin, profile, '🏆 Marco de consistência', msg, '/dashboard/progresso');
         resultados.consistencia.enviados += r.enviados;
         resultados.consistencia.falhas += r.falhas;
       }
@@ -301,10 +301,10 @@ export async function GET(request: NextRequest) {
       const nNovasMissoes = novasMissoes ?? 0;
       if (nNovasMissoes > 0) {
         const msg = pick([
-          `🧩 Você tem ${nNovasMissoes} missão${nNovasMissoes > 1 ? 'ões novas' : ' nova'} esperando por você.`,
-          `🎮 Missão${nNovasMissoes > 1 ? 'ões novas' : ' nova'} liberada${nNovasMissoes > 1 ? 's' : ''}! Bora ganhar XP?`,
+          `Missões liberadas: ${nNovasMissoes} missão${nNovasMissoes > 1 ? 'ões novas' : ' nova'} esperando por você.`,
+          `Missões liberadas: nova${nNovasMissoes > 1 ? 's' : ''} missão${nNovasMissoes > 1 ? 'ões' : ''} para ganhar XP.`,
         ]);
-        const r = await enviarLimpo(admin, profile, '🧩 Missões liberadas!', msg, '/dashboard/missoes');
+        const r = await enviarLimpo(admin, profile, '🧩 Missões liberadas', msg, '/dashboard/missoes');
         resultados.missao_liberada.enviados += r.enviados;
         resultados.missao_liberada.falhas += r.falhas;
       }
@@ -324,11 +324,11 @@ export async function GET(request: NextRequest) {
       const inativo2Dias = !ultimoEstudoISO || ultimoEstudoISO < doisDiasAtras;
       if (inativo2Dias && nPendentes > 0) {
         const msg = pick([
-          '👋 Sentimos sua falta. Volte com uma sessão curta hoje!',
-          '🔁 Retome o ritmo: 5 minutos agora já fazem diferença.',
-          `📚 Você tem ${nPendentes} cards esperando. Bora voltar?`,
+          'Reativação: sentimos sua falta. Volte com uma sessão curta hoje.',
+          'Reativação: retome o ritmo, 5 minutos já fazem diferença.',
+          `Reativação: você tem ${nPendentes} cards esperando.`,
         ]);
-        const r = await enviarLimpo(admin, profile, '👋 Hora de voltar!', msg, '/dashboard/estudar');
+        const r = await enviarLimpo(admin, profile, '👋 Reativação de estudos', msg, '/dashboard/estudar');
         resultados.reativacao.enviados += r.enviados;
         resultados.reativacao.falhas += r.falhas;
       }
@@ -337,9 +337,9 @@ export async function GET(request: NextRequest) {
     // ── 7. SESSAO CURTA INTELIGENTE ──────────────────────────────────
     if (enviarSessaoCurta && !idsHoje.has(profile.id) && nPendentes >= 1 && nPendentes <= 5) {
       const msg = pick([
-        `⏱️ Só ${nPendentes} card${nPendentes > 1 ? 's' : ''}. Em 2 minutos você resolve!`,
-        '⚡ Sessão relâmpago disponível. Entre e finalize rapidinho.',
-        '🎯 Poucos cards pendentes hoje. Bora zerar agora?',
+        `Sessão curta: só ${nPendentes} card${nPendentes > 1 ? 's' : ''}. Em 2 minutos você resolve.`,
+        'Sessão curta: revisão relâmpago disponível para agora.',
+        'Sessão curta: poucos cards pendentes hoje, bora zerar?',
       ]);
       const r = await enviarLimpo(admin, profile, '⏱️ Sessão curta sugerida', msg, '/dashboard/estudar');
       resultados.sessao_curta.enviados += r.enviados;
@@ -366,10 +366,10 @@ export async function GET(request: NextRequest) {
       const taxa = total > 0 ? Math.round((certos / total) * 100) : 0;
 
       const msg = total === 0
-        ? '📊 Nenhum card revisado esta semana. Que tal começar amanhã?'
-        : `📊 Esta semana: ${total} cards revisados com ${taxa}% de acerto. ${taxa >= 80 ? 'Excelente! 🏆' : 'Continue praticando! 💪'}`;
+        ? 'Resumo semanal: nenhum card revisado esta semana. Que tal começar amanhã?'
+        : `Resumo semanal: ${total} cards revisados com ${taxa}% de acerto. ${taxa >= 80 ? 'Excelente! 🏆' : 'Continue praticando! 💪'}`;
 
-      const r = await enviarLimpo(admin, profile, '📊 Resumo Semanal', msg, '/dashboard/progresso');
+      const r = await enviarLimpo(admin, profile, '📊 Resumo semanal', msg, '/dashboard/progresso');
       resultados.resumo.enviados += r.enviados;
       resultados.resumo.falhas += r.falhas;
     }

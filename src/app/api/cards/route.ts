@@ -8,6 +8,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import type { Card, Genero } from '@/types';
+import { createAdminClient } from '@/lib/supabase/server';
+import { enviarPushParaUsuario, parseTokens } from '@/lib/firebase-admin';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -43,6 +45,29 @@ async function getAuthUser(supabase: Awaited<ReturnType<typeof createClient>>) {
     return { user: null } as const;
   }
   return { user } as const;
+}
+
+async function notificarCardsCriados(userId: string, totalCards: number) {
+  try {
+    const admin = createAdminClient();
+    const { data: profile } = await admin
+      .from('profiles')
+      .select('fcm_token')
+      .eq('id', userId)
+      .maybeSingle();
+
+    const tokens = parseTokens((profile?.fcm_token as string | null | undefined) ?? null);
+    if (tokens.length === 0) return;
+
+    await enviarPushParaUsuario(
+      tokens,
+      '🃏 Cards criados com sucesso',
+      `${totalCards} card${totalCards > 1 ? 's' : ''} adicionados. Bora revisar agora?`,
+      '/dashboard/estudar',
+    );
+  } catch {
+    // Notificação não deve bloquear o fluxo principal da API.
+  }
 }
 
 const GENEROS_VALIDOS: Genero[] = ['masculino', 'feminino', 'neutro'];
@@ -193,6 +218,7 @@ export async function POST(request: NextRequest) {
   }
 
   const cardsCriados: Card[] = (data ?? []).map(rowToCard);
+  await notificarCardsCriados(user.id, cardsCriados.length);
 
   return NextResponse.json({
     cards: cardsCriados,
