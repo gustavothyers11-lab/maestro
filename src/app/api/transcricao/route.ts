@@ -300,23 +300,30 @@ export async function POST(request: Request) {
           ? rawPath.replace(`${supabaseUrl}/storage/v1/object/public/audio-temp/`, '')
           : rawPath;
 
-        // Gerar URL assinada (válida por 1h)
-        const { data: signedData, error: signedErr } = await supabaseAdmin.storage
+        // Baixar arquivo do Storage
+        const { data: fileData, error: downloadErr } = await supabaseAdmin.storage
           .from('audio-temp')
-          .createSignedUrl(path, 3600);
+          .download(path);
 
-        if (signedErr || !signedData?.signedUrl) {
+        // Limpar arquivo do storage (best-effort)
+        supabaseAdmin.storage.from('audio-temp').remove([path]).catch(() => undefined);
+
+        if (downloadErr || !fileData) {
           return NextResponse.json(
-            { error: `Erro ao gerar URL assinada: ${signedErr?.message ?? 'sem URL'}` },
+            { error: `Erro ao baixar do storage: ${downloadErr?.message ?? 'sem dados'}` },
             { status: 500 },
           );
         }
 
-        // Transcrever via URL (Groq baixa o arquivo direto do Storage)
-        const resultado = await chamarGroqTranscricaoViaUrl({ apiKey, url: signedData.signedUrl });
+        const audioBytes = await fileData.arrayBuffer();
 
-        // Limpar arquivo do storage (best-effort, não bloqueia resposta)
-        supabaseAdmin.storage.from('audio-temp').remove([path]).catch(() => undefined);
+        // Transcrever via upload direto (mais confiável que URL)
+        const resultado = await chamarGroqTranscricao({
+          apiKey,
+          bytes: audioBytes,
+          fileName: `audio_upload.mp3`,
+          mimeType: 'audio/mpeg',
+        });
 
         if (!resultado.ok) {
           return NextResponse.json(
