@@ -125,7 +125,7 @@ export default function LoginPage() {
             Maestro
           </h1>
           <p className="mt-2 text-sm text-gray-400">
-            Aprenda espanhol como um jogo
+            Aprenda idiomas como um jogo
           </p>
         </div>
 

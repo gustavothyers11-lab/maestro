@@ -273,7 +273,7 @@ function EstadoVazio({ onCriar }: { onCriar: () => void }) {
         Nenhum baralho ainda
       </h3>
       <p className="mt-2 text-sm text-gray-500 dark:text-white/40 text-center max-w-xs">
-        Crie seu primeiro baralho para começar a organizar seus flashcards de espanhol.
+        Crie seu primeiro baralho para começar a organizar seus flashcards.
       </p>
 
       <button

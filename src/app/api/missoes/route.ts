@@ -97,7 +97,7 @@ async function gerarMissoesDiarias(
     },
     {
       titulo: 'Escrever no diário',
-      descricao: 'Escreva pelo menos uma entrada no seu diário em espanhol.',
+      descricao: 'Escreva pelo menos uma entrada no seu diário.',
       tipo: 'diaria',
       meta: 1,
       xp_recompensa: 25,

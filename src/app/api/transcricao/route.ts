@@ -249,7 +249,7 @@ async function refinarComSonnet(transcricao: string): Promise<string> {
 
   const model = process.env.ANTHROPIC_SONNET_MODEL || 'claude-3-5-sonnet-latest';
 
-  const system = 'Você é um revisor de transcrição em espanhol. Mantenha o idioma espanhol e preserve o conteúdo original.';
+  const system = 'Você é um revisor de transcrição. Identifique o idioma do texto, mantenha esse idioma e preserve o conteúdo original.';
   const prompt = `Refine o texto abaixo com correções leves de pontuação e legibilidade, sem traduzir e sem inventar informações.\n\nTexto:\n${transcricao.slice(0, 16000)}`;
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {

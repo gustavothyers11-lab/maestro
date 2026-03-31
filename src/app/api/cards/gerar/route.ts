@@ -37,30 +37,25 @@ function limparJsonCru(texto: string): string {
     .trim();
 }
 
+/** Remove espaços/quebras duplicadas para economizar tokens de entrada */
+function limparTexto(texto: string): string {
+  return texto
+    .trim()
+    .replace(/[ \t]+/g, ' ')
+    .replace(/(\r?\n){3,}/g, '\n\n')
+    .slice(0, 6_000);
+}
+
 function construirPrompts(transcricao: string, quantidade: number, temas?: string[]) {
   const temasInstrucao = temas?.length
-    ? `\nFoque nos seguintes temas: ${temas.join(', ')}.`
+    ? `\nTemas: ${temas.join(', ')}.`
     : '';
 
-  const systemPrompt = `Você é um especialista em ensino de linguas. \
-Analise e indentifique o idioma de estudo a partir da transcrição de aula fornecida e gere flashcards de alta qualidade para estudo.
-Retorne APENAS um JSON válido no formato:
-{
-  "cards": [{
-    "frente": "palavra/frase em espanhol",
-    "verso": "tradução em português",
-    "exemplo": "frase de exemplo em espanhol",
-    "genero": "masculino" | "feminino" | "neutro",
-    "tema": "tema do card"
-  }],
-  "resumo": "resumo da aula em 2-3 frases"
-}`;
+  const systemPrompt = `Especialista em ensino de idiomas. Identifique o idioma da transcrição e gere flashcards. Seja direto, retorne apenas o JSON solicitado.
+Formato:
+{"cards":[{"frente":"palavra/frase no idioma","verso":"tradução em português","exemplo":"frase de exemplo","genero":"masculino|feminino|neutro","tema":"tema"}],"resumo":"resumo em 1-2 frases"}`;
 
-  const userPrompt = `Gere exatamente ${quantidade} flashcards a partir desta transcrição de aula:${temasInstrucao}
-
----TRANSCRIÇÃO---
-${transcricao.trim().slice(0, 12_000)}
----FIM---`;
+  const userPrompt = `Gere ${quantidade} flashcards:${temasInstrucao}\n---\n${limparTexto(transcricao)}\n---`;
 
   return { systemPrompt, userPrompt };
 }
@@ -85,7 +80,7 @@ async function gerarComSonnet(params: {
     },
     body: JSON.stringify({
       model,
-      max_tokens: 1200,
+      max_tokens: Math.min(1200, quantidade * 120),
       temperature: 0.3,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
@@ -141,7 +136,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const quantidade = Math.min(20, Math.max(1, Number(body.quantidade) || 10));
+  const quantidade = Math.min(10, Math.max(1, Number(body.quantidade) || 5));
 
   if (temas !== undefined && !Array.isArray(temas)) {
     return NextResponse.json(

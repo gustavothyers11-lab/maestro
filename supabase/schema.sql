@@ -125,6 +125,7 @@ create table profiles (
   fcm_token     text,                                          -- token Firebase Cloud Messaging
   meta_diaria   int default 20,                               -- meta de cards por dia
   modo_escuro   boolean default false,                        -- preferência de tema
+  idioma        text,                                          -- idioma de estudo (ex: 'espanhol', 'inglês', 'francês')
   criado_em     timestamp with time zone default now(),
   atualizado_em timestamp with time zone default now()
 );

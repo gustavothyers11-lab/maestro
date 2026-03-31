@@ -38,6 +38,20 @@ export async function GET(request: Request) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
+      // Verifica se o usuário já escolheu um idioma
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('idioma')
+          .eq('id', user.id)
+          .single();
+
+        if (!profile?.idioma) {
+          return NextResponse.redirect(`${origin}/escolher-idioma`);
+        }
+      }
+
       return NextResponse.redirect(`${origin}${next}`);
     }
   }

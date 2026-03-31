@@ -117,7 +117,7 @@ export async function POST(request: Request) {
   }
 
   // Usa Groq para análise detalhada
-  const systemPrompt = `Você é um professor de espanhol avaliando um exercício de ditado.
+  const systemPrompt = `Você é um professor de idiomas avaliando um exercício de ditado.
 Compare a frase original com o que o aluno escreveu.
 Retorne APENAS JSON válido no formato:
 {

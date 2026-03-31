@@ -9,7 +9,7 @@ const MODOS = [
   {
     emoji: '🎧',
     titulo: 'Ditado',
-    descricao: 'Ouça frases em espanhol e escreva o que entendeu',
+    descricao: 'Ouça frases no idioma de estudo e escreva o que entendeu',
     dificuldade: 'Intermediário',
     badgeClass: 'border-orange-500/40 bg-orange-500/20 text-orange-300',
     href: '/dashboard/praticar/ditado',
@@ -18,7 +18,7 @@ const MODOS = [
   {
     emoji: '✍️',
     titulo: 'Redação',
-    descricao: 'Receba um tema e escreva em espanhol. A IA corrige seu texto',
+    descricao: 'Receba um tema e escreva no idioma de estudo. A IA corrige seu texto',
     dificuldade: 'Avançado',
     badgeClass: 'border-red-500/40 bg-red-500/20 text-red-300',
     href: '/dashboard/praticar/redacao',
@@ -27,7 +27,7 @@ const MODOS = [
   {
     emoji: '📔',
     titulo: 'Diário',
-    descricao: 'Escreva livremente em espanhol. A IA corrige depois sem interromper',
+    descricao: 'Escreva livremente no idioma de estudo. A IA corrige depois sem interromper',
     dificuldade: 'Todos os níveis',
     badgeClass: 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300',
     href: '/dashboard/praticar/diario',
@@ -49,7 +49,7 @@ export default function PraticarPage() {
             Hub de Práticas
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-white/55 sm:text-base">
-            Escolha um modo e pratique espanhol com foco em escuta, escrita guiada e escrita livre.
+            Escolha um modo e pratique com foco em escuta, escrita guiada e escrita livre.
           </p>
         </header>
 

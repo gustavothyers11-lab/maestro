@@ -160,7 +160,7 @@ export default function MateriaisPageClient() {
             </label>
             <input
               type="text"
-              placeholder="Ex: Verbos irregulares em espanhol"
+              placeholder="Ex: Verbos irregulares"
               value={novaAulaTitle}
               onChange={(e) => setNovaAulaTitle(e.target.value)}
               className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-cyan/50 focus:ring-2 focus:ring-cyan/20 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/30"

@@ -537,7 +537,7 @@ function EtapaTranscricao({
           ref={transcricaoRef}
           value={transcricao}
           onChange={(e) => setTranscricao(e.target.value)}
-          placeholder="Cole aqui a transcrição completa da aula em espanhol…"
+          placeholder="Cole aqui a transcrição completa da aula…"
           rows={10}
           className="
             w-full rounded-xl border border-gray-300 dark:border-white/10

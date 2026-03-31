@@ -233,7 +233,7 @@ function ModalEditar({ card, aberto, onFechar, onSalvar, salvando }: ModalEditar
         {/* Frente */}
         <div>
           <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
-            Frente (Espanhol)
+            Frente (Idioma)
           </label>
           <input
             type="text"

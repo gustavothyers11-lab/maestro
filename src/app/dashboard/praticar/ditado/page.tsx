@@ -4,6 +4,8 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
+import { getLangCode } from '@/utils/idioma';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,11 +35,11 @@ interface Resultado {
 // TTS helper
 // ---------------------------------------------------------------------------
 
-function falar(texto: string, rate = 0.85) {
+function falar(texto: string, lang: string, rate = 0.85) {
   if (typeof window === 'undefined' || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(texto);
-  u.lang = 'es-ES';
+  u.lang = lang;
   u.rate = rate;
   window.speechSynthesis.speak(u);
 }
@@ -80,7 +82,17 @@ export default function DitadoPage() {
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [fraseOuvida, setFraseOuvida] = useState(false);
+  const [langCode, setLangCode] = useState('es-ES');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Carregar idioma do perfil
+  useEffect(() => {
+    createClient().auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      createClient().from('profiles').select('idioma').eq('id', user.id).single()
+        .then(({ data }) => { if (data?.idioma) setLangCode(getLangCode(data.idioma)); });
+    });
+  }, []);
 
   // ── Buscar frase ────────────────────────────────────────────────────
   const buscarFrase = useCallback(async () => {
@@ -111,7 +123,7 @@ export default function DitadoPage() {
     setFalando(true);
     setFraseOuvida(true);
     const u = new SpeechSynthesisUtterance(frase.frase);
-    u.lang = 'es-ES';
+    u.lang = langCode;
     u.rate = devagar ? 0.7 : 0.85;
     u.onend = () => setFalando(false);
     u.onerror = () => setFalando(false);
@@ -201,7 +213,7 @@ export default function DitadoPage() {
           </span>
         </h1>
         <p className="mt-1.5 text-sm text-gray-500 dark:text-white/40">
-          Ouça a frase em espanhol e escreva o que entendeu.
+          Ouça a frase e escreva o que entendeu.
         </p>
       </header>
 
@@ -385,7 +397,7 @@ export default function DitadoPage() {
                   )}
                   <button
                     type="button"
-                    onClick={() => falar(resultado.fraseCorreta)}
+                    onClick={() => falar(resultado.fraseCorreta, langCode)}
                     className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-500 hover:text-amber-400 transition-colors"
                   >
                     🔊 Ouvir novamente

@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import Card from '@/components/ui/Card';
 import type { Aula, ItemPronuncia, MaterialAula } from '@/types';
+import { createClient } from '@/lib/supabase/client';
+import { getLangCode } from '@/utils/idioma';
 
 type AbaDetalhe = 'visao-geral' | 'materiais' | 'pronuncia';
 type TipoMaterial = MaterialAula['tipo'];
@@ -51,6 +53,16 @@ export default function AulaDetalhePage() {
   const [arquivoMaterial, setArquivoMaterial] = useState<File | null>(null);
   const [uploadingMaterial, setUploadingMaterial] = useState(false);
   const [gerandoPdf, setGerandoPdf] = useState(false);
+  const [langCode, setLangCode] = useState('es-ES');
+
+  // Carregar idioma do perfil
+  useEffect(() => {
+    createClient().auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      createClient().from('profiles').select('idioma').eq('id', user.id).single()
+        .then(({ data }) => { if (data?.idioma) setLangCode(getLangCode(data.idioma)); });
+    });
+  }, []);
 
   const carregarAula = useCallback(async () => {
     if (!aulaId) return;
@@ -362,11 +374,12 @@ export default function AulaDetalhePage() {
   const falar = useCallback((texto: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     const utterance = new SpeechSynthesisUtterance(texto);
-    utterance.lang = 'es-ES';
+    utterance.lang = langCode;
 
     const voices = window.speechSynthesis.getVoices();
-    const spanishVoice = voices.find((voice) => voice.lang.toLowerCase().startsWith('es'));
-    if (spanishVoice) utterance.voice = spanishVoice;
+    const langPrefix = langCode.split('-')[0];
+    const matchedVoice = voices.find((voice) => voice.lang.toLowerCase().startsWith(langPrefix));
+    if (matchedVoice) utterance.voice = matchedVoice;
 
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
@@ -644,7 +657,7 @@ export default function AulaDetalhePage() {
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-white/45">Treino de voz</p>
                   <p className="mt-1 text-sm text-gray-500 dark:text-white/45">
-                    A IA identifica as palavras-chave; a voz é reproduzida no navegador em espanhol.
+                    A IA identifica as palavras-chave; a voz é reproduzida no navegador no idioma de estudo.
                   </p>
                 </div>
                 <button

@@ -39,6 +39,10 @@ export default function PerfilPage() {
   const [carregandoStats, setCarregandoStats] = useState(true);
   const [saindo, setSaindo] = useState(false);
 
+  // Idioma
+  const [idioma, setIdioma] = useState<string | null>(null);
+  const [salvandoIdioma, setSalvandoIdioma] = useState(false);
+
   // Notificações
   const [tokenStatus, setTokenStatus] = useState<TokenStatus | null>(null);
   const [registrando, setRegistrando] = useState(false);
@@ -64,6 +68,16 @@ export default function PerfilPage() {
         nome,
         initials: nome.slice(0, 2).toUpperCase(),
       });
+
+      // Carregar idioma do perfil
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('idioma')
+          .eq('id', u.id)
+          .single();
+        if (!cancelado && profile?.idioma) setIdioma(profile.idioma);
+      } catch { /* silencioso */ }
 
       try {
         const res = await fetch('/api/progresso');
@@ -228,6 +242,42 @@ export default function PerfilPage() {
                 <p className="text-[11px] text-gray-500 dark:text-white/45">{s.label}</p>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Idioma de estudo */}
+        <div className="space-y-2">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-white/35 mb-3">
+            Idioma de estudo
+          </h2>
+          <div className="rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1a1a2e] p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🌍</span>
+                <span className="text-sm font-medium text-gray-700 dark:text-white/80">
+                  {idioma ?? 'Não definido'}
+                </span>
+              </div>
+              <select
+                value={idioma ?? ''}
+                onChange={async (e) => {
+                  const novo = e.target.value;
+                  if (!novo || !user) return;
+                  setSalvandoIdioma(true);
+                  setIdioma(novo);
+                  const supabase = createClient();
+                  await supabase.from('profiles').update({ idioma: novo }).eq('id', user.id);
+                  setSalvandoIdioma(false);
+                }}
+                disabled={salvandoIdioma}
+                className="rounded-lg border border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-white/[0.04] px-3 py-1.5 text-sm text-gray-700 dark:text-white/70 outline-none transition-colors focus:border-[#1260CC] dark:focus:border-[#0ABFDE]"
+              >
+                <option value="">Selecione</option>
+                {['Espanhol', 'Inglês', 'Francês', 'Italiano', 'Alemão', 'Japonês', 'Coreano', 'Mandarim'].map((i) => (
+                  <option key={i} value={i}>{i}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 

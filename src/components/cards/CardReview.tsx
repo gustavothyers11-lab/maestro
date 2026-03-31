@@ -15,6 +15,8 @@ import type { Card, ResultadoRevisao } from '@/types';
 import { useSRS } from '@/hooks/useSRS';
 import { calcularSRS } from '@/lib/srs';
 import { calcularPorcentagem, formatarIntervalo } from '@/utils/formatters';
+import { createClient } from '@/lib/supabase/client';
+import { getLangCode } from '@/utils/idioma';
 import FlashCard from './FlashCard';
 
 // ---------------------------------------------------------------------------
@@ -169,10 +171,10 @@ function useContagem(alvo: number, duracao = 1200) {
 // Web Speech API — TTS helper
 // ---------------------------------------------------------------------------
 
-function falarTexto(texto: string) {
+function falarTexto(texto: string, lang = 'es-ES') {
   if (typeof window === 'undefined' || !window.speechSynthesis) return;
   const utterance = new SpeechSynthesisUtterance(texto);
-  utterance.lang = 'es-ES';
+  utterance.lang = lang;
   utterance.rate = 0.85;
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(utterance);
@@ -273,6 +275,17 @@ export default function CardReview({ cards, onFinalizar }: CardReviewProps) {
     responder,
   } = useSRS(cards);
 
+  const [langCode, setLangCode] = useState('es-ES');
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      supabase.from('profiles').select('idioma').eq('id', user.id).single()
+        .then(({ data }) => { if (data?.idioma) setLangCode(getLangCode(data.idioma)); });
+    });
+  }, []);
+
   // UI state
   const [virado, setVirado] = useState(false);
   const [animacao, setAnimacao] = useState<'idle' | 'slide-out' | 'slide-in'>('idle');
@@ -321,10 +334,10 @@ export default function CardReview({ cards, onFinalizar }: CardReviewProps) {
   const handleFlip = useCallback(() => {
     setVirado((v) => {
       const next = !v;
-      if (next && cardAtual) falarTexto(cardAtual.frente);
+      if (next && cardAtual) falarTexto(cardAtual.frente, langCode);
       return next;
     });
-  }, [cardAtual]);
+  }, [cardAtual, langCode]);
 
   // Handler: responder com animações
   const handleResponder = useCallback(

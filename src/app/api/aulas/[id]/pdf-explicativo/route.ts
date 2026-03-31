@@ -40,17 +40,18 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ i
 
   const model = process.env.ANTHROPIC_SONNET_MODEL || 'claude-sonnet-4-20250514';
 
-  const system = `Você é um professor de espanhol criando material didático em PORTUGUÊS para estudantes brasileiros.
-Crie um PDF explicativo bem estruturado baseado na transcrição de uma aula de espanhol.
+  const system = `Você é um professor de idiomas criando material didático em PORTUGUÊS para estudantes brasileiros.
+Crie um PDF explicativo bem estruturado baseado na transcrição de uma aula.
+Identifique o idioma da transcrição e use-o nos exemplos.
 O material deve ser claro, organizado e útil para revisão.`;
 
-  const prompt = `Baseado na transcrição abaixo, crie um material explicativo completo em PORTUGUÊS (com os termos em espanhol quando necessário).
+  const prompt = `Baseado na transcrição abaixo, crie um material explicativo completo em PORTUGUÊS (com os termos no idioma de estudo quando necessário).
 
 Estruture o conteúdo com as seguintes seções (use apenas as que fizerem sentido para o conteúdo):
 
 1. **Resumo da aula** — Síntese do que foi ensinado
 2. **Conceitos principais** — Explicação dos tópicos gramaticais, vocabulário ou conceitos abordados
-3. **Vocabulário-chave** — Lista de palavras/expressões importantes (espanhol → português)
+3. **Vocabulário-chave** — Lista de palavras/expressões importantes (idioma de estudo → português)
 4. **Exemplos práticos** — Frases de exemplo com tradução
 5. **Regras e dicas** — Regras gramaticais ou dicas de uso
 6. **Exercícios sugeridos** — 3 a 5 exercícios para praticar (com gabarito)

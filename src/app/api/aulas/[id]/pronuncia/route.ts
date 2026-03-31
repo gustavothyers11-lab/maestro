@@ -41,17 +41,17 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ i
   }
 
   const model = process.env.ANTHROPIC_SONNET_MODEL || 'claude-sonnet-4-20250514';
-  const system = 'Você é um professor de espanhol. Extraia vocabulário importante de uma aula e explique a pronúncia de forma curta, precisa e útil para brasileiros.';
+  const system = 'Você é um professor de idiomas. Extraia vocabulário importante de uma aula e explique a pronúncia de forma curta, precisa e útil para brasileiros. Identifique o idioma da transcrição.';
   const prompt = `A partir da transcrição abaixo, identifique até 12 palavras ou expressões-chave para praticar pronúncia.
 
 Retorne APENAS um JSON válido no formato:
 {
   "itens": [
     {
-      "palavra": "texto em espanhol",
+      "palavra": "texto no idioma de estudo",
       "pronuncia": "guia fonético simples para brasileiros",
       "significado": "significado em português",
-      "exemplo": "frase curta em espanhol"
+      "exemplo": "frase curta no idioma de estudo"
     }
   ]
 }

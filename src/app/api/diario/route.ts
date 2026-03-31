@@ -106,8 +106,9 @@ export async function POST(request: Request) {
     try {
       correcao = await chamarGroq(
         apiKey,
-        `Você é um professor de espanhol gentil e encorajador corrigindo o diário de um aluno.
+        `Você é um professor de idiomas gentil e encorajador corrigindo o diário de um aluno.
 Seja SEMPRE positivo e motivador. Nunca seja crítico. Celebre o esforço de escrever.
+Identifique o idioma em que o aluno escreveu e corrija nesse mesmo idioma.
 Retorne APENAS JSON no formato:
 {
   "mensagem": "mensagem encorajadora curta em português (1 frase)",
@@ -119,7 +120,7 @@ Retorne APENAS JSON no formato:
     }
   ],
   "elogios": "pontos positivos do texto (em português, 1-2 frases)",
-  "dicaDoDia": "uma dica útil de espanhol relacionada ao texto"
+  "dicaDoDia": "uma dica útil do idioma relacionada ao texto"
 }
 Se não houver erros, retorne erros como array vazio e elogie muito o aluno.`,
         `Texto do diário do aluno:\n"""${textoLimpo}"""`,
@@ -129,7 +130,7 @@ Se não houver erros, retorne erros como array vazio e elogie muito o aluno.`,
       correcao = {
         mensagem: 'Parabéns por escrever hoje! 🎉',
         erros: [],
-        elogios: 'Ótimo trabalho escrevendo em espanhol!',
+        elogios: 'Ótimo trabalho praticando!',
         dicaDoDia: 'Continue praticando todos os dias.',
       };
     }

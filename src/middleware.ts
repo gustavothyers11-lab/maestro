@@ -7,7 +7,7 @@ export async function middleware(request: NextRequest) {
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const { pathname } = request.nextUrl;
 
-  const isPublicPath = pathname === '/login' || pathname.startsWith('/auth/callback');
+  const isPublicPath = pathname === '/login' || pathname.startsWith('/auth/callback') || pathname === '/escolher-idioma';
 
   // Sem variáveis do Supabase, mantém apenas /login acessível.
   if (!supabaseUrl || !supabaseKey) {

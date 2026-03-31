@@ -312,7 +312,7 @@ async function handleStreak(
     14: '😤 14 dias! Sua dedicação é impressionante!',
     30: '💎 30 dias seguidos! Você é imparável!',
     60: '👑 60 dias! Maestro de verdade!',
-    100: '🌟 100 dias! Uma lenda viva do espanhol!',
+    100: '🌟 100 dias! Uma lenda viva dos idiomas!',
   };
 
   const corpo = marcos[dias] ?? `🔥 ${dias} dias seguidos! Continue assim!`;

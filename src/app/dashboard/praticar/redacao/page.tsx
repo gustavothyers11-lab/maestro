@@ -168,7 +168,7 @@ export default function RedacaoPage() {
           </span>
         </h1>
         <p className="mt-1.5 text-sm text-gray-500 dark:text-white/40">
-          Escreva sobre o tema em espanhol. A IA vai corrigir e dar feedback.
+          Escreva sobre o tema proposto. A IA vai corrigir e dar feedback.
         </p>
       </header>
 
@@ -249,7 +249,7 @@ export default function RedacaoPage() {
                 value={texto}
                 onChange={(e) => setTexto(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Empiece a escribir aquí en español..."
+                placeholder="Comece a escrever aqui..."
                 disabled={verificando || !!resultado}
                 rows={10}
                 className="w-full resize-none rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-white/[0.04] p-4 text-base leading-relaxed text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-white/20 outline-none transition-all duration-200 focus:border-[#1260CC]/50 focus:ring-2 focus:ring-[#1260CC]/20 disabled:opacity-50"

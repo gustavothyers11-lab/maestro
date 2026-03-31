@@ -295,7 +295,7 @@ export default function DiarioPage() {
                   value={texto}
                   onChange={(e) => setTexto(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Empieza a escribir aquí... Escribe sobre tu día, tus pensamientos, lo que quieras. 📝"
+                  placeholder="Comece a escrever aqui... Escreva sobre o seu dia, seus pensamentos, o que quiser. 📝"
                   disabled={enviando || !!entradaSelecionada}
                   className="diario-textarea w-full h-full min-h-[300px] lg:min-h-[400px] resize-none bg-transparent text-base sm:text-lg leading-relaxed text-gray-900 dark:text-white/90 placeholder:text-gray-300 dark:placeholder:text-white/15 outline-none disabled:opacity-60"
                   autoFocus

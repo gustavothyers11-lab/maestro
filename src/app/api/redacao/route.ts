@@ -84,11 +84,11 @@ export async function GET() {
   if (temFallback) {
     // Sem cards — temas genéricos
     const temas = [
-      { tema: 'Describe tu casa ideal en detalle', dica: 'Use adjetivos e vocabulário de móveis e cômodos.' },
-      { tema: '¿Cuál fue el mejor viaje que hiciste?', dica: 'Pratique o pretérito e expressões de tempo.' },
-      { tema: 'Escribe sobre tu rutina diaria', dica: 'Use verbos reflexivos e conectores temporais.' },
-      { tema: '¿Qué harías si pudieras viajar al pasado?', dica: 'Pratique o condicional e o subjuntivo.' },
-      { tema: 'Describe a tu mejor amigo/a', dica: 'Use adjetivos de personalidade e aparência.' },
+      { tema: 'Descreva sua casa ideal em detalhes', dica: 'Use adjetivos e vocabulário de móveis e cômodos.' },
+      { tema: 'Qual foi a melhor viagem que você fez?', dica: 'Pratique o pretérito e expressões de tempo.' },
+      { tema: 'Escreva sobre sua rotina diária', dica: 'Use verbos reflexivos e conectores temporais.' },
+      { tema: 'O que você faria se pudesse viajar no tempo?', dica: 'Pratique o condicional e o subjuntivo.' },
+      { tema: 'Descreva seu melhor amigo(a)', dica: 'Use adjetivos de personalidade e aparência.' },
     ];
     const escolhido = temas[Math.floor(Math.random() * temas.length)];
     return NextResponse.json(escolhido);
@@ -97,18 +97,19 @@ export async function GET() {
   try {
     const resultado = await chamarGroq(
       apiKey,
-      `Você é um professor de espanhol criativo. Gere UM tema de redação interessante baseado no vocabulário do aluno.
-Retorne APENAS JSON: { "tema": "enunciado do tema em espanhol (frase imperativa ou pergunta)", "dica": "dica curta em português para ajudar o aluno" }`,
+      `Você é um professor de idiomas criativo. Gere UM tema de redação interessante baseado no vocabulário do aluno.
+Gere o tema no idioma que o aluno está estudando (identificado pelo vocabulário).
+Retorne APENAS JSON: { "tema": "enunciado do tema no idioma de estudo (frase imperativa ou pergunta)", "dica": "dica curta em português para ajudar o aluno" }`,
       `Aqui está o vocabulário recente do aluno:\n${vocabulario}\n\nGere um tema de redação criativo que use esse vocabulário.`,
     );
 
     return NextResponse.json({
-      tema: resultado.tema ?? 'Escribe sobre tu día ideal',
+      tema: resultado.tema ?? 'Escreva sobre o seu dia ideal',
       dica: resultado.dica ?? 'Use o vocabulário que você aprendeu recentemente.',
     });
   } catch {
     return NextResponse.json({
-      tema: 'Describe cómo sería tu día perfecto',
+      tema: 'Descreva como seria o seu dia perfeito',
       dica: 'Use vocabulário de rotina, comida e lugares.',
     });
   }
@@ -153,7 +154,8 @@ export async function POST(request: Request) {
   try {
     const resultado = await chamarGroq(
       apiKey,
-      `Você é um professor de espanhol corrigindo a redação de um aluno de nível intermediário/avançado.
+      `Você é um professor de idiomas corrigindo a redação de um aluno de nível intermediário/avançado.
+Identifique o idioma do texto e corrija nesse idioma.
 Avalie o texto quanto a: gramática, ortografia, vocabulário, coerência e fluência.
 Retorne APENAS JSON no formato:
 {
@@ -162,7 +164,7 @@ Retorne APENAS JSON no formato:
   "erros": [
     {
       "trecho": "trecho exato com erro no texto do aluno",
-      "correcao": "trecho corrigido em espanhol",
+      "correcao": "trecho corrigido no idioma de estudo",
       "explicacao": "explicação do erro em português"
     }
   ],
