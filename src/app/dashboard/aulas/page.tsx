@@ -410,14 +410,26 @@ function EtapaTranscricao({
     const outputName = 'output.mp3';
 
     try {
-      // iOS: vídeo não suportado (sem FFmpeg.wasm no WebKit)
-      if (isIOS && !isAudioFile) {
-        throw new Error('No iPhone/iPad, envie um arquivo de áudio (m4a/mp3/wav) para transcrever automaticamente.');
-      }
+      // Formatos de vídeo aceitos diretamente pelo Groq Whisper
+      const isVideoGroqCompat = ['.mp4', '.mpeg', '.mpga', '.webm'].includes(ext)
+        || arquivoMidia.type.startsWith('video/');
 
       if (isAudioFile) {
         setStatusUpload('Preparando áudio...');
         setTamanhoMp3Mb(arquivoMidia.size / (1024 * 1024));
+        await enviarParaTranscricao(arquivoMidia);
+        setStatusUpload('');
+        return;
+      }
+
+      // iOS ou vídeo compatível com Groq → envia direto (sem FFmpeg)
+      if (isIOS || isVideoGroqCompat) {
+        const sizeMb = arquivoMidia.size / (1024 * 1024);
+        if (sizeMb > 25) {
+          throw new Error(`Vídeo muito grande (${sizeMb.toFixed(1)} MB). O limite é 25 MB para envio direto. Tente um vídeo mais curto ou comprima antes de enviar.`);
+        }
+        setStatusUpload('Enviando vídeo para transcrição...');
+        setTamanhoMp3Mb(sizeMb);
         await enviarParaTranscricao(arquivoMidia);
         setStatusUpload('');
         return;
@@ -455,7 +467,7 @@ function EtapaTranscricao({
       setStatusUpload('');
       const mensagemBase = e instanceof Error ? e.message : 'Erro ao processar e transcrever o arquivo.';
       if (/load failed|failed to fetch|networkerror/i.test(mensagemBase)) {
-        setErroUpload('Não foi possível carregar o FFmpeg no navegador. No iPhone/iPad, prefira enviar áudio (m4a/mp3/wav) ou tente no desktop para extrair áudio de vídeo.');
+        setErroUpload('Não foi possível carregar o FFmpeg. Tente novamente ou envie um arquivo menor (até 25 MB).');
       } else {
         setErroUpload(mensagemBase);
       }

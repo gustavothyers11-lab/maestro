@@ -23,7 +23,7 @@ interface GroqTranscricaoResult {
 
 function nomeSeguroParaUpload(nomeOriginal: string | undefined): string {
   const base = (nomeOriginal || 'audio').normalize('NFKD').replace(/[^a-zA-Z0-9._-]/g, '_');
-  if (/\.(mp3|m4a|wav|webm|ogg)$/i.test(base)) return base;
+  if (/\.(mp3|m4a|wav|webm|ogg|mp4|mpeg|mpga|flac|mov)$/i.test(base)) return base;
   return `${base}.mp3`;
 }
 
