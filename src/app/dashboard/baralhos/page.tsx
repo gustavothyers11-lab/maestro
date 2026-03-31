@@ -319,81 +319,56 @@ function ModalNovoBaralho({
     }
   }, [aberto]);
 
-  const [excluindoId, setExcluindoId] = useState<string | null>(null);
-  const handleExcluir = useCallback(async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir este baralho? Essa ação não pode ser desfeita.')) return;
-    setExcluindoId(id);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const nomeTrimmed = nome.trim();
+    if (!nomeTrimmed) {
+      setErro('Digite um nome para o baralho.');
+      return;
+    }
+    setSalvando(true);
+    setErro('');
     try {
       const res = await fetch('/api/baralhos', {
-        method: 'DELETE',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify({ nome: nomeTrimmed, tema, cor }),
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Erro ao excluir baralho.');
-      }
-      setBaralhos((prev) => prev.filter((b) => b.id !== id));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Erro ao criar baralho.');
+      onCriado(data.baralho ?? data);
+      onFechar();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro ao excluir baralho.');
+      setErro(err instanceof Error ? err.message : 'Erro ao criar baralho.');
     } finally {
-      setExcluindoId(null);
+      setSalvando(false);
     }
-  }, []);
+  };
 
   return (
-    <div className="baralhos-page mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8 space-y-8">
-      {/* ...existing code... */}
-      {loading && !mounted ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <BaralhoSkeleton key={i} index={i} />
-          ))}
+    <Modal aberto={aberto} onFechar={onFechar} titulo="Novo Baralho">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {erro && (
+          <p className="rounded-lg bg-red-50 dark:bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400">
+            {erro}
+          </p>
+        )}
+
+        {/* Nome */}
+        <div className="space-y-1.5">
+          <label htmlFor="nome-baralho" className="block text-sm font-semibold text-gray-700 dark:text-white/60">
+            Nome
+          </label>
+          <input
+            id="nome-baralho"
+            type="text"
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            placeholder="Ex: Vocabulário básico"
+            className="w-full rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-white/[0.04] px-4 py-3 text-sm text-gray-900 dark:text-white outline-none transition-all duration-150 focus:border-primary dark:focus:border-cyan focus:ring-2 focus:ring-primary/20 dark:focus:ring-cyan/20"
+            autoFocus
+          />
         </div>
-      ) : loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <BaralhoSkeleton key={i} index={i} />
-          ))}
-        </div>
-      ) : error ? (
-        <div className="flex flex-col items-center gap-4 py-16">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 dark:bg-red-500/10 text-2xl">
-            ⚠️
-          </div>
-          <p className="text-sm text-red-500 dark:text-red-400 text-center max-w-xs">{error}</p>
-          <button
-            type="button"
-            onClick={carregar}
-            className="rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-white/[0.04] px-5 py-2 text-sm font-semibold text-gray-700 dark:text-white/60 transition-colors hover:bg-gray-100 dark:hover:bg-white/[0.08]"
-          >
-            Tentar novamente
-          </button>
-        </div>
-      ) : baralhos.length === 0 ? (
-        <EstadoVazio onCriar={() => setModalAberto(true)} />
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {baralhos.map((b, i) => (
-            <BaralhoCard
-              key={b.id}
-              baralho={b}
-              index={i}
-              onEstudar={handleEstudar}
-              onVerCards={handleVerCards}
-              onExcluir={handleExcluir}
-              excluindo={excluindoId === b.id}
-            />
-          ))}
-        </div>
-      )}
-      <ModalNovoBaralho
-        aberto={modalAberto}
-        onFechar={() => setModalAberto(false)}
-        onCriado={handleCriado}
-      />
-    </div>
-  );
 
         {/* Tema */}
         <div className="space-y-1.5">
@@ -541,6 +516,28 @@ export default function BaralhosPage() {
     [router],
   );
 
+  const [excluindoId, setExcluindoId] = useState<string | null>(null);
+  const handleExcluir = useCallback(async (id: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir este baralho? Essa ação não pode ser desfeita.')) return;
+    setExcluindoId(id);
+    try {
+      const res = await fetch('/api/baralhos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Erro ao excluir baralho.');
+      }
+      setBaralhos((prev) => prev.filter((b) => b.id !== id));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao excluir baralho.');
+    } finally {
+      setExcluindoId(null);
+    }
+  }, []);
+
   // ════════════════════════════════════════════════════════════════════
   // RENDER
   // ════════════════════════════════════════════════════════════════════
@@ -621,6 +618,8 @@ export default function BaralhosPage() {
               index={i}
               onEstudar={handleEstudar}
               onVerCards={handleVerCards}
+              onExcluir={handleExcluir}
+              excluindo={excluindoId === b.id}
             />
           ))}
         </div>

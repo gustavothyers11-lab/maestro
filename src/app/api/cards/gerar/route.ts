@@ -42,8 +42,8 @@ function construirPrompts(transcricao: string, quantidade: number, temas?: strin
     ? `\nFoque nos seguintes temas: ${temas.join(', ')}.`
     : '';
 
-  const systemPrompt = `Você é um especialista em ensino de espanhol. \
-Analise a transcrição de aula fornecida e gere flashcards de alta qualidade para estudo.
+  const systemPrompt = `Você é um especialista em ensino de linguas. \
+Analise e indentifique o idioma de estudo a partir da transcrição de aula fornecida e gere flashcards de alta qualidade para estudo.
 Retorne APENAS um JSON válido no formato:
 {
   "cards": [{
@@ -85,7 +85,7 @@ async function gerarComSonnet(params: {
     },
     body: JSON.stringify({
       model,
-      max_tokens: 4000,
+      max_tokens: 1200,
       temperature: 0.3,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
