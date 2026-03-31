@@ -1,6 +1,6 @@
 // Serviço de notificações — push notifications via Firebase Cloud Messaging
 
-import { getToken, onMessage } from 'firebase/messaging';
+import { getToken, deleteToken, onMessage } from 'firebase/messaging';
 import { getFirebaseMessaging } from './firebase';
 import { createBrowserClient } from '@supabase/ssr';
 
@@ -62,6 +62,14 @@ export async function solicitarPermissao(): Promise<string | null> {
     `/firebase-messaging-sw.js?${swConfig.toString()}`,
   );
 
+  // Deletar token antigo para forçar renovação
+  const oldToken = typeof localStorage !== 'undefined' ? localStorage.getItem('maestro_fcm_token') : null;
+  try {
+    await deleteToken(messaging);
+  } catch {
+    // ignora se não tinha token anterior
+  }
+
   const token = await getToken(messaging, {
     vapidKey,
     serviceWorkerRegistration: registration,
@@ -71,7 +79,9 @@ export async function solicitarPermissao(): Promise<string | null> {
     throw new Error('getToken() retornou vazio. Possível: VAPID key incorreta ou projeto Firebase sem Cloud Messaging ativado.');
   }
 
-  await salvarToken(token);
+  // Salvar novo token e remover o antigo do banco
+  await salvarToken(token, oldToken ?? undefined);
+  localStorage.setItem('maestro_fcm_token', token);
   return token;
 }
 
