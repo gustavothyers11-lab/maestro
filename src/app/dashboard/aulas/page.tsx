@@ -33,7 +33,6 @@ interface BaralhoSimples {
 type Etapa = 1 | 2 | 3;
 type Direcao = 'next' | 'prev';
 
-const TEMAS_DISPONIVEIS = ['Vocabulário', 'Verbos', 'Frases', 'Gírias', 'Expressões'] as const;
 const CATEGORIAS_AULA: Array<{ value: CategoriaAula; label: string; descricao: string }> = [
   { value: 'geral', label: 'Geral', descricao: 'Conteúdo misto com visão ampla da aula.' },
   { value: 'gramatica', label: 'Gramática', descricao: 'Regras, estruturas e uso correto.' },
@@ -303,8 +302,6 @@ function EtapaTranscricao({
   setTranscricao,
   quantidade,
   setQuantidade,
-  temasSelecionados,
-  toggleTema,
   baralhos,
   baralhoId,
   setBaralhoId,
@@ -320,8 +317,6 @@ function EtapaTranscricao({
   setTranscricao: (v: string) => void;
   quantidade: number;
   setQuantidade: (v: number) => void;
-  temasSelecionados: string[];
-  toggleTema: (t: string) => void;
   baralhos: BaralhoSimples[];
   baralhoId: string;
   setBaralhoId: (v: string) => void;
@@ -717,36 +712,6 @@ function EtapaTranscricao({
         <div className="flex justify-between text-[10px] text-gray-400 dark:text-white/30 tabular-nums">
           <span>5</span>
           <span>20</span>
-        </div>
-      </div>
-
-      {/* Temas */}
-      <div className="space-y-2">
-        <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-white/50">Temas</p>
-        <div className="flex flex-wrap gap-2">
-          {TEMAS_DISPONIVEIS.map((tema) => {
-            const ativo = temasSelecionados.includes(tema);
-            return (
-              <button
-                key={tema}
-                type="button"
-                onClick={() => toggleTema(tema)}
-                className={`
-                  btn-ripple relative overflow-hidden
-                  rounded-lg px-3 py-1.5 text-xs font-semibold
-                  border transition-all duration-200
-                  ${
-                    ativo
-                      ? 'border-cyan/50 bg-cyan/15 text-cyan shadow-[0_0_8px_rgba(10,191,222,0.2)]'
-                      : 'border-gray-300 dark:border-white/10 bg-gray-50 dark:bg-white/5 text-gray-600 dark:text-white/50 hover:border-gray-400 dark:hover:border-white/20 hover:text-gray-800 dark:hover:text-white/70'
-                  }
-                `}
-              >
-                {ativo && <span className="mr-1">✓</span>}
-                {tema}
-              </button>
-            );
-          })}
         </div>
       </div>
 
@@ -1228,7 +1193,6 @@ export default function AulasPage() {
   const [categoria, setCategoria] = useState<CategoriaAula>('geral');
   const [transcricao, setTranscricao] = useState('');
   const [quantidade, setQuantidade] = useState(10);
-  const [temasSelecionados, setTemasSelecionados] = useState<string[]>([]);
 
   // Etapa 2
   const [resumo, setResumo] = useState('');
@@ -1292,12 +1256,6 @@ export default function AulasPage() {
     }
   }, []);
 
-  const toggleTema = useCallback((tema: string) => {
-    setTemasSelecionados((prev) =>
-      prev.includes(tema) ? prev.filter((t) => t !== tema) : [...prev, tema],
-    );
-  }, []);
-
   const irPara = useCallback((e: Etapa, dir: Direcao) => {
     setDirecao(dir);
     setEtapa(e);
@@ -1315,7 +1273,6 @@ export default function AulasPage() {
         body: JSON.stringify({
           transcricao,
           quantidade,
-          temas: temasSelecionados.length > 0 ? temasSelecionados : undefined,
         }),
       });
 
@@ -1333,7 +1290,7 @@ export default function AulasPage() {
     } finally {
       setGerando(false);
     }
-  }, [transcricao, quantidade, temasSelecionados, irPara]);
+  }, [transcricao, quantidade, irPara]);
 
   /* ── Salvar cards aprovados ──────────────────────────────────────── */
   const salvarCards = useCallback(async (aprovados: CardGerado[]) => {
@@ -1394,7 +1351,6 @@ export default function AulasPage() {
     setCategoria('geral');
     setTranscricao('');
     setQuantidade(10);
-    setTemasSelecionados([]);
     setBaralhoId('');
     setResumo('');
     setCardsGerados([]);
@@ -1495,8 +1451,6 @@ export default function AulasPage() {
                     setTranscricao={setTranscricao}
                     quantidade={quantidade}
                     setQuantidade={setQuantidade}
-                    temasSelecionados={temasSelecionados}
-                    toggleTema={toggleTema}
                     baralhos={baralhos}
                     baralhoId={baralhoId}
                     setBaralhoId={setBaralhoId}
