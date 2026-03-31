@@ -41,6 +41,61 @@ const CATEGORIAS_AULA: Array<{ value: CategoriaAula; label: string; descricao: s
 const ACCEPTED_MEDIA = '.mp3';
 
 // ---------------------------------------------------------------------------
+// Limite de body do Vercel: 4.5 MB. Usamos 4 MB como margem segura.
+// ---------------------------------------------------------------------------
+const MAX_CHUNK_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Encontra o offset do frame sync MP3 mais próximo (para trás) a partir de `pos`.
+ * Frame sync MP3 = 0xFF seguido de byte com os 3 bits mais altos ligados (0xE0).
+ */
+function encontrarFrameSync(bytes: Uint8Array, pos: number): number {
+  for (let i = Math.min(pos, bytes.length - 2); i >= 0; i--) {
+    if (bytes[i] === 0xff && (bytes[i + 1] & 0xe0) === 0xe0) {
+      return i;
+    }
+  }
+  return 0;
+}
+
+/**
+ * Divide um arquivo MP3 em chunks ≤ 4 MB cortando em frame boundaries.
+ * Se o arquivo couber inteiro, retorna [originalFile].
+ */
+function dividirMp3EmChunks(fileBytes: Uint8Array, originalFile: File): File[] {
+  if (fileBytes.length <= MAX_CHUNK_BYTES) {
+    return [originalFile];
+  }
+
+  const chunks: File[] = [];
+  let offset = 0;
+  let idx = 1;
+
+  while (offset < fileBytes.length) {
+    let end = offset + MAX_CHUNK_BYTES;
+
+    if (end >= fileBytes.length) {
+      end = fileBytes.length;
+    } else {
+      // Recua até o frame sync mais próximo para não cortar no meio de um frame
+      const syncPos = encontrarFrameSync(fileBytes, end);
+      if (syncPos > offset) {
+        end = syncPos;
+      }
+    }
+
+    const chunkData = fileBytes.slice(offset, end);
+    const blob = new Blob([chunkData], { type: 'audio/mpeg' });
+    chunks.push(new File([blob], `audio_parte${idx}.mp3`, { type: 'audio/mpeg' }));
+
+    offset = end;
+    idx++;
+  }
+
+  return chunks;
+}
+
+// ---------------------------------------------------------------------------
 // Stepper visual
 // ---------------------------------------------------------------------------
 
@@ -189,28 +244,43 @@ function EtapaTranscricao({
     setTamanhoMp3Mb(null);
   }, []);
 
-  // Envia arquivo(s) de áudio para transcrição.
-  // Se WAV > 4MB, divide em chunks por byte-slicing (rápido, sem decodificação).
+  // Envia arquivo MP3 para transcrição, dividindo em chunks se > 4MB.
   const enviarParaTranscricao = useCallback(async (
     file: File,
   ) => {
-    setStatusUpload('Enviando para transcrição…');
+    setStatusUpload('Preparando áudio…');
+    const fileBytes = new Uint8Array(await file.arrayBuffer());
+    const chunks = dividirMp3EmChunks(fileBytes, file);
 
-    const formData = new FormData();
-    formData.append('audio', file, file.name);
+    const partes: string[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      setStatusUpload(
+        chunks.length > 1
+          ? `Transcrevendo parte ${i + 1} de ${chunks.length}…`
+          : 'Enviando para transcrição…',
+      );
 
-    const res = await fetch('/api/transcricao', {
-      method: 'POST',
-      body: formData,
-    });
+      const formData = new FormData();
+      formData.append('audio', chunks[i], chunks[i].name);
 
-    const payload = await res.json();
-    if (!res.ok) throw new Error(payload.error || `Erro na transcrição: ${res.status}`);
+      const res = await fetch('/api/transcricao', {
+        method: 'POST',
+        body: formData,
+      });
 
-    const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
-    setTranscricao(texto);
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || `Erro na parte ${i + 1}: ${res.status}`);
+
+      const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
+      if (texto) partes.push(texto);
+    }
+
+    const textoFinal = partes.join('\n\n');
+    setTranscricao(textoFinal);
     setSucessoUpload(
-      `Transcrição concluída! ${texto.length.toLocaleString('pt-BR')} caracteres extraídos`,
+      chunks.length > 1
+        ? `Transcrição concluída! ${chunks.length} partes — ${textoFinal.length.toLocaleString('pt-BR')} caracteres`
+        : `Transcrição concluída! ${textoFinal.length.toLocaleString('pt-BR')} caracteres extraídos`,
     );
     requestAnimationFrame(() => { transcricaoRef.current?.focus(); });
   }, [setTranscricao]);
@@ -237,69 +307,10 @@ function EtapaTranscricao({
     try {
       const sizeMb = arquivoMidia.size / (1024 * 1024);
 
-      // MP3 ≤ 4MB: envia direto via FormData (dentro do limite do Vercel)
-      if (sizeMb <= 4) {
-        setStatusUpload('Preparando áudio...');
-        setTamanhoMp3Mb(sizeMb);
-        await enviarParaTranscricao(arquivoMidia);
-        setStatusUpload('');
-        return;
-      }
-
-      // ── MP3 > 4MB: upload via Supabase Storage → Groq via URL ──────
-      // Usa signed upload URL (gerada no servidor com service role) para evitar RLS
-      setStatusUpload(`Enviando arquivo (${sizeMb.toFixed(1)} MB)...`);
+      // Envia direto — o chunking divide automaticamente se > 4MB
+      setStatusUpload('Preparando áudio...');
       setTamanhoMp3Mb(sizeMb);
-
-      const storagePath = `temp/${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`;
-
-      // 1. Obter URL de upload assinada do servidor
-      const urlRes = await fetch('/api/upload-audio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: storagePath }),
-      });
-
-      if (!urlRes.ok) {
-        const urlErr = await urlRes.json().catch(() => ({}));
-        throw new Error((urlErr as { error?: string }).error || 'Erro ao obter URL de upload.');
-      }
-
-      const { token: uploadToken } = (await urlRes.json()) as { signedUrl: string; token: string; path: string };
-
-      // 2. Upload direto para Storage via signed URL (sem RLS)
-      const { createClient: createBrowserSupabase } = await import('@/lib/supabase/client');
-      const supabase = createBrowserSupabase();
-
-      const { error: uploadErr } = await supabase.storage
-        .from('audio-temp')
-        .uploadToSignedUrl(storagePath, uploadToken, arquivoMidia, {
-          upsert: false,
-        });
-
-      if (uploadErr) {
-        throw new Error(`Erro ao enviar para o storage: ${uploadErr.message}`);
-      }
-
-      setStatusUpload('Transcrevendo...');
-
-      const res = await fetch('/api/transcricao', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storagePath }),
-      });
-
-      const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || `Erro na transcrição: ${res.status}`);
-
-      const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
-      if (texto) {
-        setTranscricao(texto);
-        setSucessoUpload(`Transcrição concluída! ${texto.length.toLocaleString('pt-BR')} caracteres extraídos`);
-        requestAnimationFrame(() => { transcricaoRef.current?.focus(); });
-      } else {
-        throw new Error('Transcrição retornou vazia.');
-      }
+      await enviarParaTranscricao(arquivoMidia);
       setStatusUpload('');
     } catch (e) {
       setStatusUpload('');
