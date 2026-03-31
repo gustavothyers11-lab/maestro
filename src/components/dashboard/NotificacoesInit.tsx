@@ -19,20 +19,24 @@ export default function NotificacoesInit() {
     async function init() {
       const hoje = new Date().toDateString();
       const ultimaInit = localStorage.getItem(STORAGE_KEY_FCM);
-      if (ultimaInit === hoje) return;
+      if (ultimaInit === hoje && Notification.permission === 'granted') return;
 
       const supabase = criarSupabase();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      let tokenObtido = false;
       try {
-        await solicitarPermissao();
+        const token = await solicitarPermissao();
+        tokenObtido = Boolean(token);
       } catch {
         // not blocking
       }
 
       agendarLembreteDiario(20, 0);
-      localStorage.setItem(STORAGE_KEY_FCM, hoje);
+      if (tokenObtido) {
+        localStorage.setItem(STORAGE_KEY_FCM, hoje);
+      }
       verificarStreak(user.id, supabase);
     }
 
