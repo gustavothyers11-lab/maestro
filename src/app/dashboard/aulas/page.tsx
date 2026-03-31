@@ -5,8 +5,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import Card from '@/components/ui/Card';
 import ProgressBar from '@/components/ui/ProgressBar';
 import type { CategoriaAula, Genero } from '@/types';
@@ -40,161 +38,7 @@ const CATEGORIAS_AULA: Array<{ value: CategoriaAula; label: string; descricao: s
   { value: 'conversacao', label: 'Conversação', descricao: 'Diálogos e situações de fala.' },
   { value: 'pronuncia', label: 'Pronúncia', descricao: 'Ativa a aba de pronúncia na aula.' },
 ];
-const ACCEPTED_MEDIA = '.mp4,.mov,.avi,.mkv,.webm,.m4a,.mp3,.wav';
-
-let ffmpegInstance: FFmpeg | null = null;
-let ffmpegLoadPromise: Promise<FFmpeg> | null = null;
-
-async function getFFmpeg(): Promise<FFmpeg> {
-  if (ffmpegInstance) return ffmpegInstance;
-  if (ffmpegLoadPromise) return ffmpegLoadPromise;
-
-  ffmpegLoadPromise = (async () => {
-    try {
-      const ffmpeg = new FFmpeg();
-      const loadAttempts: Array<() => Promise<void>> = [
-        // UMD sem worker explícito é mais estável em browsers com restrições.
-        async () => {
-          const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.15/dist/umd';
-          await ffmpeg.load({
-            coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-            wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-          });
-        },
-        async () => {
-          const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.15/dist/umd';
-          await ffmpeg.load({
-            coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-            wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-          });
-        },
-      ];
-
-      let ultimoErro: unknown = null;
-      for (const tentarLoad of loadAttempts) {
-        try {
-          await tentarLoad();
-          ultimoErro = null;
-          break;
-        } catch (erroTentativa) {
-          ultimoErro = erroTentativa;
-        }
-      }
-
-      if (ultimoErro) {
-        throw ultimoErro;
-      }
-
-      ffmpegInstance = ffmpeg;
-      return ffmpeg;
-    } catch (e) {
-      ffmpegLoadPromise = null;
-      throw e instanceof Error
-        ? e
-        : new Error('Falha ao carregar FFmpeg. Verifique conexão, bloqueadores e tente novamente.');
-    }
-  })();
-
-  return ffmpegLoadPromise;
-}
-
-// ---------------------------------------------------------------------------
-// Limite de body do Vercel: 4.5 MB. Usamos 4 MB como margem segura.
-// ---------------------------------------------------------------------------
-const MAX_CHUNK_BYTES = 4 * 1024 * 1024;
-
-/**
- * Cria um header WAV de 44 bytes para dados PCM já existentes.
- */
-function criarWavHeader(
-  dataSize: number,
-  sampleRate: number,
-  channels: number,
-  bitsPerSample: number,
-): Uint8Array {
-  const header = new ArrayBuffer(44);
-  const v = new DataView(header);
-  const bytesPerSample = bitsPerSample / 8;
-  const blockAlign = channels * bytesPerSample;
-
-  const ws = (o: number, s: string) => {
-    for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i));
-  };
-
-  ws(0, 'RIFF');
-  v.setUint32(4, 36 + dataSize, true);
-  ws(8, 'WAVE');
-  ws(12, 'fmt ');
-  v.setUint32(16, 16, true);            // fmt chunk size
-  v.setUint16(20, 1, true);             // PCM
-  v.setUint16(22, channels, true);
-  v.setUint32(24, sampleRate, true);
-  v.setUint32(28, sampleRate * blockAlign, true);
-  v.setUint16(32, blockAlign, true);
-  v.setUint16(34, bitsPerSample, true);
-  ws(36, 'data');
-  v.setUint32(40, dataSize, true);
-
-  return new Uint8Array(header);
-}
-
-/**
- * Divide um arquivo WAV grande em chunks ≤ 4 MB, cada um com header WAV válido.
- * Faz slicing direto dos bytes (zero decodificação de áudio, zero uso de memória extra).
- * Para arquivos não-WAV, retorna o arquivo original (será enviado como está).
- */
-function dividirWavEmChunks(
-  fileBytes: Uint8Array,
-  originalFile: File,
-): File[] {
-  // Verificar se é WAV: RIFF....WAVE
-  const isWav =
-    fileBytes.length > 44 &&
-    String.fromCharCode(fileBytes[0], fileBytes[1], fileBytes[2], fileBytes[3]) === 'RIFF' &&
-    String.fromCharCode(fileBytes[8], fileBytes[9], fileBytes[10], fileBytes[11]) === 'WAVE';
-
-  if (!isWav) {
-    // Não é WAV — retorna inteiro (o servidor tentará como está)
-    return [originalFile];
-  }
-
-  // Ler propriedades do header original
-  const view = new DataView(fileBytes.buffer, fileBytes.byteOffset, fileBytes.byteLength);
-  const channels = view.getUint16(22, true);
-  const sampleRate = view.getUint32(24, true);
-  const bitsPerSample = view.getUint16(34, true);
-  const blockAlign = channels * (bitsPerSample / 8);
-
-  // Dados PCM começam no offset 44
-  const pcmStart = 44;
-  const pcmData = fileBytes.slice(pcmStart);
-  const totalPcmBytes = pcmData.length;
-
-  // Quanto de PCM cabe em cada chunk (respeitando blockAlign)
-  const maxPcmPerChunk = Math.floor((MAX_CHUNK_BYTES - 44) / blockAlign) * blockAlign;
-
-  if (totalPcmBytes + 44 <= MAX_CHUNK_BYTES) {
-    return [originalFile];
-  }
-
-  const chunks: File[] = [];
-  let offset = 0;
-  let idx = 1;
-
-  while (offset < totalPcmBytes) {
-    const end = Math.min(offset + maxPcmPerChunk, totalPcmBytes);
-    const chunkPcm = pcmData.slice(offset, end);
-    const header = criarWavHeader(chunkPcm.length, sampleRate, channels, bitsPerSample);
-
-    const blob = new Blob([header.buffer as ArrayBuffer, chunkPcm.buffer as ArrayBuffer], { type: 'audio/wav' });
-    chunks.push(new File([blob], `audio_parte${idx}.wav`, { type: 'audio/wav' }));
-
-    offset = end;
-    idx++;
-  }
-
-  return chunks;
-}
+const ACCEPTED_MEDIA = '.mp3';
 
 // ---------------------------------------------------------------------------
 // Stepper visual
@@ -350,39 +194,23 @@ function EtapaTranscricao({
   const enviarParaTranscricao = useCallback(async (
     file: File,
   ) => {
-    setStatusUpload('Preparando áudio…');
-    const fileBytes = new Uint8Array(await file.arrayBuffer());
-    const chunks = dividirWavEmChunks(fileBytes, file);
+    setStatusUpload('Enviando para transcrição…');
 
-    const partes: string[] = [];
-    for (let i = 0; i < chunks.length; i++) {
-      setStatusUpload(
-        chunks.length > 1
-          ? `Transcrevendo parte ${i + 1} de ${chunks.length}…`
-          : 'Enviando para transcrição…',
-      );
+    const formData = new FormData();
+    formData.append('audio', file, file.name);
 
-      const formData = new FormData();
-      formData.append('audio', chunks[i], chunks[i].name);
+    const res = await fetch('/api/transcricao', {
+      method: 'POST',
+      body: formData,
+    });
 
-      const res = await fetch('/api/transcricao', {
-        method: 'POST',
-        body: formData,
-      });
+    const payload = await res.json();
+    if (!res.ok) throw new Error(payload.error || `Erro na transcrição: ${res.status}`);
 
-      const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || `Erro na parte ${i + 1}: ${res.status}`);
-
-      const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
-      if (texto) partes.push(texto);
-    }
-
-    const textoFinal = partes.join('\n\n');
-    setTranscricao(textoFinal);
+    const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
+    setTranscricao(texto);
     setSucessoUpload(
-      chunks.length > 1
-        ? `Transcrição concluída! ${chunks.length} partes — ${textoFinal.length.toLocaleString('pt-BR')} caracteres`
-        : `Transcrição concluída! ${textoFinal.length.toLocaleString('pt-BR')} caracteres extraídos`,
+      `Transcrição concluída! ${texto.length.toLocaleString('pt-BR')} caracteres extraídos`,
     );
     requestAnimationFrame(() => { transcricaoRef.current?.focus(); });
   }, [setTranscricao]);
@@ -397,25 +225,20 @@ function EtapaTranscricao({
 
     const nomeLower = arquivoMidia.name.toLowerCase();
     const ext = nomeLower.includes('.') ? nomeLower.slice(nomeLower.lastIndexOf('.')) : '';
-    const isAudioFile = arquivoMidia.type.startsWith('audio/') || ['.m4a', '.mp3', '.wav'].includes(ext);
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
-      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isAudioFile = ext === '.mp3' || arquivoMidia.type === 'audio/mpeg';
 
-    const inputName = `input${arquivoMidia.name.slice(arquivoMidia.name.lastIndexOf('.')) || '.bin'}`;
-    const outputName = 'output.mp3';
+    // Aceita somente MP3
+    if (!isAudioFile) {
+      setErroUpload('Somente arquivos MP3 são aceitos. Converta seu áudio/vídeo para MP3 antes de enviar.');
+      setProcessandoUpload(false);
+      return;
+    }
 
     try {
-      // Formatos de vídeo aceitos diretamente pelo Groq Whisper
-      const isVideoGroqCompat = ['.mp4', '.mpeg', '.mpga', '.webm', '.mov'].includes(ext)
-        || arquivoMidia.type.startsWith('video/');
-
       const sizeMb = arquivoMidia.size / (1024 * 1024);
-      const isWavFile = ext === '.wav' || arquivoMidia.type === 'audio/wav';
 
-      // WAV ≤ 20MB: pode ser dividido em chunks de 4MB e enviado via FormData
-      // Outros áudios ≤ 4MB: envia direto (dentro do limite do Vercel)
-      const maxDirectMb = isWavFile ? 20 : 4;
-      if (isAudioFile && sizeMb <= maxDirectMb) {
+      // MP3 ≤ 4MB: envia direto via FormData (dentro do limite do Vercel)
+      if (sizeMb <= 4) {
         setStatusUpload('Preparando áudio...');
         setTamanhoMp3Mb(sizeMb);
         await enviarParaTranscricao(arquivoMidia);
@@ -423,49 +246,12 @@ function EtapaTranscricao({
         return;
       }
 
-      // Vídeos pequenos (≤20MB) no desktop: usa FFmpeg local se possível
-      if (!isIOS && !isAudioFile && isVideoGroqCompat && sizeMb <= 20) {
-        try {
-          setStatusUpload('Preparando FFmpeg...');
-          const ffmpeg = await getFFmpeg();
-
-          setStatusUpload('Extraindo áudio do vídeo...');
-          await ffmpeg.writeFile(inputName, await fetchFile(arquivoMidia));
-          await ffmpeg.exec(['-i', inputName, '-vn', '-ar', '16000', '-ac', '1', '-b:a', '64k', outputName]);
-
-          setStatusUpload('Comprimindo áudio...');
-          const audioData = await ffmpeg.readFile(outputName);
-          let mp3Bytes: Uint8Array;
-
-          if (typeof audioData === 'string') {
-            mp3Bytes = new TextEncoder().encode(audioData);
-          } else if (audioData instanceof Uint8Array) {
-            mp3Bytes = new Uint8Array(audioData);
-          } else {
-            mp3Bytes = new Uint8Array(audioData as ArrayBuffer);
-          }
-
-          const mp3Blob = new Blob([mp3Bytes] as any[], { type: 'audio/mpeg' });
-          const mp3SizeMb = mp3Blob.size / (1024 * 1024);
-          setTamanhoMp3Mb(mp3SizeMb);
-          const mp3File = new File([mp3Blob], 'audio.mp3', { type: 'audio/mpeg' });
-          await enviarParaTranscricao(mp3File);
-
-          await ffmpeg.deleteFile(inputName).catch(() => undefined);
-          await ffmpeg.deleteFile(outputName).catch(() => undefined);
-          setStatusUpload('');
-          return;
-        } catch {
-          // FFmpeg falhou no desktop — cai no Storage upload abaixo
-        }
-      }
-
-      // ── FALLBACK: upload via Supabase Storage → Groq via URL ──────
+      // ── MP3 > 4MB: upload via Supabase Storage → Groq via URL ──────
       // Usa signed upload URL (gerada no servidor com service role) para evitar RLS
       setStatusUpload(`Enviando arquivo (${sizeMb.toFixed(1)} MB)...`);
       setTamanhoMp3Mb(sizeMb);
 
-      const storagePath = `temp/${Date.now()}_${Math.random().toString(36).slice(2)}${ext || '.mp4'}`;
+      const storagePath = `temp/${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`;
 
       // 1. Obter URL de upload assinada do servidor
       const urlRes = await fetch('/api/upload-audio', {
@@ -584,7 +370,7 @@ function EtapaTranscricao({
       <div className="space-y-3">
         <div className="h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-white/15 to-transparent" />
         <p className="text-xs font-bold uppercase tracking-wider text-center text-gray-500 dark:text-white/45">
-          Ou envie o vídeo da aula
+          Ou envie o áudio da aula (somente MP3)
         </p>
         <div className="h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-white/15 to-transparent" />
 
@@ -594,8 +380,8 @@ function EtapaTranscricao({
           </p>
           <ol className="mt-2 list-decimal pl-4 space-y-1 text-xs text-amber-800 dark:text-amber-100/90">
             <li>Converta seu video para audio no site abaixo.</li>
-            <li>Baixe o arquivo em MP3 ou M4A.</li>
-            <li>Volte aqui e envie o audio para transcrever mais rapido.</li>
+            <li>Baixe o arquivo em <strong>MP3</strong>.</li>
+            <li>Volte aqui e envie o MP3 para transcrever.</li>
           </ol>
           <a
             href="https://rushtoaudio.com/pt"
@@ -626,7 +412,7 @@ function EtapaTranscricao({
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
             </svg>
-            Escolher vídeo ou áudio
+            Escolher arquivo MP3
           </label>
           <input
             id="upload-video-aula"
