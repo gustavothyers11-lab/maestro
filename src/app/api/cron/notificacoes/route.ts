@@ -82,10 +82,10 @@ async function enviarLimpo(
 
   const resultado = await enviarPushParaUsuario(tokens, titulo, msg, link);
 
-  if (resultado.tokensInvalidos.length > 0) {
-    const limpos = tokens.filter((t) => !resultado.tokensInvalidos.includes(t));
-    await admin.from('profiles').update({ fcm_token: JSON.stringify(limpos) }).eq('id', profile.id);
-  }
+  // NÃO remover tokens "inválidos" — em mobile/PWA o SW dorme e
+  // retorna not-registered temporariamente, mas volta a funcionar
+  // quando o usuário abre o app. O re-registro automático (4h)
+  // cuida de manter tokens atualizados.
 
   return { enviados: resultado.enviados, falhas: resultado.falhas };
 }

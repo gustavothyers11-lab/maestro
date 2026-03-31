@@ -121,7 +121,7 @@ export default function PerfilPage() {
       const token = await solicitarPermissao();
       if (token) {
         // Limpar cache diário pra garantir que o NotificacoesInit não pule
-        localStorage.removeItem('maestro_fcm_init');
+        localStorage.removeItem('maestro_fcm_ts');
         // Recarregar status
         const res = await fetch('/api/notificacoes/token');
         if (res.ok) {

@@ -11,15 +11,17 @@ function criarSupabase() {
   );
 }
 
-const STORAGE_KEY_FCM = 'maestro_fcm_init';
+const STORAGE_KEY_FCM = 'maestro_fcm_ts';
 const STORAGE_KEY_STREAK = 'maestro_streak_notif';
+const REGISTRO_INTERVALO_MS = 4 * 60 * 60 * 1000; // 4 horas
 
 export default function NotificacoesInit() {
   useEffect(() => {
     async function init() {
-      const hoje = new Date().toDateString();
-      const ultimaInit = localStorage.getItem(STORAGE_KEY_FCM);
-      if (ultimaInit === hoje && Notification.permission === 'granted') return;
+      // Re-registrar token a cada 4h (não mais 1x/dia)
+      const ultimoTs = Number(localStorage.getItem(STORAGE_KEY_FCM) || '0');
+      const agora = Date.now();
+      if ((agora - ultimoTs) < REGISTRO_INTERVALO_MS && Notification.permission === 'granted') return;
 
       const supabase = criarSupabase();
       const { data: { user } } = await supabase.auth.getUser();
@@ -35,7 +37,7 @@ export default function NotificacoesInit() {
 
       agendarLembreteDiario(20, 0);
       if (tokenObtido) {
-        localStorage.setItem(STORAGE_KEY_FCM, hoje);
+        localStorage.setItem(STORAGE_KEY_FCM, String(agora));
       }
       verificarStreak(user.id, supabase);
     }
