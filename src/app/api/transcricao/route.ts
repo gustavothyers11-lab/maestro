@@ -59,53 +59,22 @@ async function chamarGroqTranscricao(params: {
 }): Promise<GroqTranscricaoResult> {
   const { apiKey, bytes, fileName, mimeType } = params;
 
-  const tentativasPayload: Array<{ model: string; language?: string; response_format?: string }> = [
-    { model: 'whisper-large-v3-turbo', language: 'es', response_format: 'text' },
-    { model: 'whisper-large-v3', language: 'es', response_format: 'text' },
-    { model: 'whisper-large-v3-turbo', response_format: 'text' },
-  ];
+  const payload = new FormData();
+  const file = new File([new Uint8Array(bytes)] as any[], fileName, { type: mimeType });
 
-  let ultimo: GroqTranscricaoResult = {
-    ok: false,
-    status: 502,
-    texto: 'Falha ao transcrever com Groq Whisper.',
-  };
+  payload.append('file', file, fileName);
+  payload.append('model', 'whisper-large-v3-turbo');
+  payload.append('language', 'es');
+  payload.append('response_format', 'text');
 
-  for (const t of tentativasPayload) {
-    const payload = new FormData();
-    const file = new File([new Uint8Array(bytes)] as any[], fileName, { type: mimeType });
+  const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: payload,
+  });
 
-    payload.append('file', file, fileName);
-    payload.append('model', t.model);
-    if (t.language) payload.append('language', t.language);
-    if (t.response_format) payload.append('response_format', t.response_format);
-
-    const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: payload,
-    });
-
-    const texto = (await groqRes.text()).trim();
-    ultimo = {
-      ok: groqRes.ok,
-      status: groqRes.status,
-      texto,
-    };
-
-    if (groqRes.ok) {
-      return ultimo;
-    }
-
-    // Erros que não são de pattern provavelmente não vão melhorar com outra combinação.
-    if (!/expected pattern|did not match the expected pattern/i.test(texto)) {
-      return ultimo;
-    }
-  }
-
-  return ultimo;
+  const texto = (await groqRes.text()).trim();
+  return { ok: groqRes.ok, status: groqRes.status, texto };
 }
 
 // Transcrição via URL (para arquivos grandes no Storage)
@@ -115,40 +84,20 @@ async function chamarGroqTranscricaoViaUrl(params: {
 }): Promise<GroqTranscricaoResult> {
   const { apiKey, url } = params;
 
-  const tentativas: Array<{ model: string; language?: string; response_format?: string }> = [
-    { model: 'whisper-large-v3-turbo', language: 'es', response_format: 'text' },
-    { model: 'whisper-large-v3-turbo', response_format: 'text' },
-    { model: 'whisper-large-v3', language: 'es', response_format: 'text' },
-    { model: 'whisper-large-v3', response_format: 'text' },
-  ];
+  const payload = new FormData();
+  payload.append('url', url);
+  payload.append('model', 'whisper-large-v3-turbo');
+  payload.append('language', 'es');
+  payload.append('response_format', 'text');
 
-  let ultimo: GroqTranscricaoResult = {
-    ok: false,
-    status: 502,
-    texto: 'Falha ao transcrever via URL com Groq Whisper.',
-  };
+  const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: payload,
+  });
 
-  for (const t of tentativas) {
-    const payload = new FormData();
-    payload.append('url', url);
-    payload.append('model', t.model);
-    if (t.language) payload.append('language', t.language);
-    if (t.response_format) payload.append('response_format', t.response_format);
-
-    const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: payload,
-    });
-
-    const texto = (await groqRes.text()).trim();
-    ultimo = { ok: groqRes.ok, status: groqRes.status, texto };
-
-    if (groqRes.ok) return ultimo;
-    if (!/expected pattern|did not match the expected pattern/i.test(texto)) return ultimo;
-  }
-
-  return ultimo;
+  const texto = (await groqRes.text()).trim();
+  return { ok: groqRes.ok, status: groqRes.status, texto };
 }
 
 async function extrairAudioDaRequisicao(request: Request): Promise<{
@@ -394,39 +343,21 @@ export async function POST(request: Request) {
     const baseMime = mimeType || 'audio/mpeg';
     const bytes = await audio.arrayBuffer();
 
-    const tentativas = [
-      { fileName: filename, mimeType: baseMime },
-      { fileName: 'audio_upload.wav', mimeType: 'audio/wav' },
-      { fileName: 'audio_upload.mp3', mimeType: 'audio/mpeg' },
-      { fileName: 'audio_upload.m4a', mimeType: 'audio/mp4' },
-    ];
+    const resultado = await chamarGroqTranscricao({
+      apiKey,
+      bytes,
+      fileName: filename,
+      mimeType: baseMime,
+    });
 
-    let ultimo: GroqTranscricaoResult | null = null;
-    for (const tentativa of tentativas) {
-      const resTry = await chamarGroqTranscricao({
-        apiKey,
-        bytes,
-        fileName: tentativa.fileName,
-        mimeType: tentativa.mimeType,
-      });
-
-      ultimo = resTry;
-      if (resTry.ok) break;
-
-      // Se não for o erro clássico de pattern, não adianta insistir em formato.
-      if (!/expected pattern|did not match the expected pattern/i.test(resTry.texto)) {
-        break;
-      }
-    }
-
-    if (!ultimo || !ultimo.ok) {
+    if (!resultado.ok) {
       return NextResponse.json(
-        { error: ultimo?.texto || 'Falha ao transcrever com Groq Whisper.' },
-        { status: ultimo?.status || 502 },
+        { error: resultado.texto || 'Falha ao transcrever com Groq Whisper.' },
+        { status: resultado.status || 502 },
       );
     }
 
-    const transcricaoFinal = skipRefine ? ultimo.texto : await refinarComSonnet(ultimo.texto);
+    const transcricaoFinal = skipRefine ? resultado.texto : await refinarComSonnet(resultado.texto);
     return NextResponse.json({ transcricao: transcricaoFinal });
   } catch (e) {
     return NextResponse.json(
