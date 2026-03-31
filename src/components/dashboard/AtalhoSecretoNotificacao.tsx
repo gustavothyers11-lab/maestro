@@ -54,19 +54,15 @@ async function dispararBroadcastSecreto() {
 
     if (agora - ultimo < COOLDOWN_MS) return;
 
-    const res = await fetch('/api/notificacoes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tipo: 'broadcast',
-        titulo: '💌 Lembrete especial',
-        mensagem: 'cuida amor, estudar, sai do tik tok ❤️',
-      }),
-    });
+    const res = await fetch('/api/cron/notificacoes?tipo=atalho_amor');
+    const payload = await res.json().catch(() => ({}));
 
-    if (res.ok) {
+    if (res.ok && payload?.ok) {
       localStorage.setItem(STORAGE_CHAVE_ULTIMO_DISPARO, String(agora));
+      return;
     }
+
+    console.warn('[AtalhoSecretoNotificacao] Falha ao disparar atalho:', payload);
   } catch {
     // Atalho secreto não deve quebrar a navegação.
   }

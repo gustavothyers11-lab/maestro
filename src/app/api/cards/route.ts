@@ -57,16 +57,20 @@ async function notificarCardsCriados(userId: string, totalCards: number) {
       .maybeSingle();
 
     const tokens = parseTokens((profile?.fcm_token as string | null | undefined) ?? null);
-    if (tokens.length === 0) return;
+    if (tokens.length === 0) {
+      return { ok: false, motivo: 'Sem tokens para este usuário.' };
+    }
 
-    await enviarPushParaUsuario(
+    const resultado = await enviarPushParaUsuario(
       tokens,
       '🃏 Cards criados com sucesso',
       `${totalCards} card${totalCards > 1 ? 's' : ''} adicionados. Bora revisar agora?`,
       '/dashboard/estudar',
     );
+    return { ok: resultado.ok, enviados: resultado.enviados, falhas: resultado.falhas };
   } catch {
-    // Notificação não deve bloquear o fluxo principal da API.
+    console.error('[POST /api/cards] Falha ao enviar notificação de cards criados.');
+    return { ok: false, motivo: 'Erro ao enviar notificação.' };
   }
 }
 
@@ -218,11 +222,12 @@ export async function POST(request: NextRequest) {
   }
 
   const cardsCriados: Card[] = (data ?? []).map(rowToCard);
-  await notificarCardsCriados(user.id, cardsCriados.length);
+  const notificacao = await notificarCardsCriados(user.id, cardsCriados.length);
 
   return NextResponse.json({
     cards: cardsCriados,
     total: cardsCriados.length,
+    notificacao,
     ...(erros.length > 0 ? { avisos: erros } : {}),
   }, { status: 201 });
 }

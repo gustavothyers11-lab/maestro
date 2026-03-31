@@ -29,17 +29,21 @@ async function notificarAulaCriada(userId: string, tituloAula: string) {
       .maybeSingle();
 
     const tokens = parseTokens((profile?.fcm_token as string | null | undefined) ?? null);
-    if (tokens.length === 0) return;
+    if (tokens.length === 0) {
+      return { ok: false, motivo: 'Sem tokens para este usuário.' };
+    }
 
     const tituloCurto = tituloAula.length > 40 ? `${tituloAula.slice(0, 40)}...` : tituloAula;
-    await enviarPushParaUsuario(
+    const resultado = await enviarPushParaUsuario(
       tokens,
       '🎓 Aula criada com sucesso',
       `Aula "${tituloCurto}" criada. Agora gere cards para estudar.`,
       '/dashboard/aulas',
     );
+    return { ok: resultado.ok, enviados: resultado.enviados, falhas: resultado.falhas };
   } catch {
-    // Notificação não deve bloquear o fluxo principal da API.
+    console.error('[POST /api/aulas] Falha ao enviar notificação de aula criada.');
+    return { ok: false, motivo: 'Erro ao enviar notificação.' };
   }
 }
 
@@ -194,7 +198,7 @@ export async function POST(request: NextRequest) {
   }
 
   const aulaCriada = rowToAula(data);
-  await notificarAulaCriada(user.id, aulaCriada.titulo);
+  const notificacao = await notificarAulaCriada(user.id, aulaCriada.titulo);
 
-  return NextResponse.json({ aula: aulaCriada }, { status: 201 });
+  return NextResponse.json({ aula: aulaCriada, notificacao }, { status: 201 });
 }

@@ -102,6 +102,7 @@ async function enviarLimpo(
 // - missao_liberada (missoes novas disponiveis)
 // - reativacao     (2+ dias sem estudar)
 // - sessao_curta   (sessao de 2 minutos)
+// - atalho_amor    (broadcast manual do atalho secreto)
 // ---------------------------------------------------------------------------
 
 export async function GET(request: NextRequest) {
@@ -122,6 +123,7 @@ export async function GET(request: NextRequest) {
     'missao_liberada',
     'reativacao',
     'sessao_curta',
+    'atalho_amor',
   ];
   if (tipo && !tiposValidos.includes(tipo)) {
     return NextResponse.json(
@@ -138,6 +140,7 @@ export async function GET(request: NextRequest) {
   const enviarMissaoLiberada = !tipo || tipo === 'missao_liberada';
   const enviarReativacao = !tipo || tipo === 'reativacao';
   const enviarSessaoCurta = !tipo || tipo === 'sessao_curta';
+  const enviarAtalhoAmor = tipo === 'atalho_amor';
 
   const admin = createAdminClient();
 
@@ -193,7 +196,30 @@ export async function GET(request: NextRequest) {
     missao_liberada: { enviados: 0, falhas: 0 },
     reativacao: { enviados: 0, falhas: 0 },
     sessao_curta: { enviados: 0, falhas: 0 },
+    atalho_amor: { enviados: 0, falhas: 0 },
   };
+
+  if (enviarAtalhoAmor) {
+    for (const profile of profiles as ProfileComToken[]) {
+      const r = await enviarLimpo(
+        admin,
+        profile,
+        '💌 Lembrete especial',
+        'cuida amor, estudar, sai do tik tok ❤️',
+        '/dashboard/estudar',
+      );
+      resultados.atalho_amor.enviados += r.enviados;
+      resultados.atalho_amor.falhas += r.falhas;
+    }
+
+    return NextResponse.json({
+      ok: true,
+      tipo,
+      usuarios: profiles.length,
+      domingo,
+      resultados,
+    });
+  }
 
   for (const profile of profiles as ProfileComToken[]) {
     const { count: pendentes } = await admin
