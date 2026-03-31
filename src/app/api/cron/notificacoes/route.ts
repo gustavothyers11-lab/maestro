@@ -67,7 +67,7 @@ function calcularStreakAtual(
   return streak;
 }
 
-type ProfileComToken = { id: string; fcm_token: string; meta_diaria: number | null };
+type ProfileComToken = { id: string; fcm_token: string };
 type Resultado = { enviados: number; falhas: number };
 
 async function enviarLimpo(
@@ -142,10 +142,17 @@ export async function GET(request: NextRequest) {
   const admin = createAdminClient();
 
   // Buscar todos os profiles com token
-  const { data: profiles } = await admin
+  const { data: profiles, error: profilesError } = await admin
     .from('profiles')
-    .select('id, fcm_token, meta_diaria')
+    .select('id, fcm_token')
     .not('fcm_token', 'is', null);
+
+  if (profilesError) {
+    return NextResponse.json({
+      ok: false,
+      error: `Erro ao buscar tokens: ${profilesError.message}`,
+    }, { status: 500 });
+  }
 
   if (!profiles || profiles.length === 0) {
     return NextResponse.json({ ok: true, motivo: 'Sem tokens', notificacoes: [] });
@@ -242,7 +249,7 @@ export async function GET(request: NextRequest) {
 
     // ── 3. META QUASE CONCLUIDA ─────────────────────────────────────
     if (enviarMetaQuase) {
-      const metaDiaria = Math.max(5, profile.meta_diaria ?? 20);
+      const metaDiaria = 20;
       const faltam = metaDiaria - nRevisoesHoje;
       if (faltam > 0 && faltam <= 3) {
         const msg = pick([
