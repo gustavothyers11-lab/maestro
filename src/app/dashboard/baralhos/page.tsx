@@ -102,11 +102,15 @@ function BaralhoCard({
   index,
   onEstudar,
   onVerCards,
+  onExcluir,
+  excluindo,
 }: {
   baralho: Baralho;
   index: number;
   onEstudar: (id: string) => void;
   onVerCards: (id: string) => void;
+  onExcluir: (id: string) => void;
+  excluindo: boolean;
 }) {
   const pct = porcentagemDominados(baralho);
   const icone = TEMA_ICONES[baralho.tema] ?? '📝';
@@ -131,7 +135,7 @@ function BaralhoCard({
       />
 
       <div className="relative p-5">
-        {/* Header: nome + ícone */}
+        {/* Header: nome + ícone + lixeira */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <h3 className="truncate text-lg font-bold text-gray-900 dark:text-white">
@@ -149,13 +153,34 @@ function BaralhoCard({
           </div>
 
           {/* Ícone do tema */}
-          <div
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-xl transition-transform duration-200 group-hover:scale-110 group-hover:rotate-3"
-            style={{
-              backgroundColor: corClara(baralho.cor, 0.12),
-            }}
-          >
-            {icone}
+          <div className="flex flex-col items-center gap-2">
+            <div
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-xl transition-transform duration-200 group-hover:scale-110 group-hover:rotate-3"
+              style={{
+                backgroundColor: corClara(baralho.cor, 0.12),
+              }}
+            >
+              {icone}
+            </div>
+            {/* Botão lixeira */}
+            <button
+              type="button"
+              title="Excluir baralho"
+              onClick={() => onExcluir(baralho.id)}
+              disabled={excluindo}
+              className="mt-2 flex items-center justify-center rounded-lg border border-red-200 dark:border-red-500/20 bg-white dark:bg-[#1a1a35] p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {excluindo ? (
+                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              )}
+            </button>
           </div>
         </div>
 
@@ -294,93 +319,81 @@ function ModalNovoBaralho({
     }
   }, [aberto]);
 
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
-
-      const nomeTrimmed = nome.trim();
-      if (!nomeTrimmed) {
-        setErro('Dê um nome ao seu baralho.');
-        return;
+  const [excluindoId, setExcluindoId] = useState<string | null>(null);
+  const handleExcluir = useCallback(async (id: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir este baralho? Essa ação não pode ser desfeita.')) return;
+    setExcluindoId(id);
+    try {
+      const res = await fetch('/api/baralhos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Erro ao excluir baralho.');
       }
-      if (nomeTrimmed.length > 100) {
-        setErro('Nome muito longo (max 100 caracteres).');
-        return;
-      }
-
-      setSalvando(true);
-      setErro('');
-
-      try {
-        const res = await fetch('/api/baralhos', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ nome: nomeTrimmed, tema, cor }),
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error ?? `Erro ${res.status}`);
-        }
-
-        onCriado(data.baralho);
-        onFechar();
-      } catch (err) {
-        setErro(err instanceof Error ? err.message : 'Erro ao criar baralho.');
-      } finally {
-        setSalvando(false);
-      }
-    },
-    [nome, tema, cor, onCriado, onFechar],
-  );
+      setBaralhos((prev) => prev.filter((b) => b.id !== id));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao excluir baralho.');
+    } finally {
+      setExcluindoId(null);
+    }
+  }, []);
 
   return (
-    <Modal aberto={aberto} onFechar={onFechar} titulo="Novo Baralho">
-      <form onSubmit={handleSubmit} className="space-y-5 p-5">
-
-        {/* Erro */}
-        {erro && (
-          <div className="rounded-lg border border-red-200 dark:border-red-500/20 bg-red-50 dark:bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-400">
-            {erro}
+    <div className="baralhos-page mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8 space-y-8">
+      {/* ...existing code... */}
+      {loading && !mounted ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <BaralhoSkeleton key={i} index={i} />
+          ))}
+        </div>
+      ) : loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <BaralhoSkeleton key={i} index={i} />
+          ))}
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center gap-4 py-16">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 dark:bg-red-500/10 text-2xl">
+            ⚠️
           </div>
-        )}
-
-        {/* Preview mini card */}
-        <div
-          className="baralho-form-preview relative overflow-hidden rounded-xl p-4 transition-all duration-300"
-          style={{
-            background: `linear-gradient(135deg, ${corClara(cor, 0.15)}, ${corClara(cor, 0.05)})`,
-            borderLeft: `4px solid ${cor}`,
-          }}
-        >
-          <p className="text-sm font-bold text-gray-900 dark:text-white">
-            {nome.trim() || 'Meu Baralho'}
-          </p>
-          <span
-            className="mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold"
-            style={{ backgroundColor: corClara(cor, 0.15), color: cor }}
+          <p className="text-sm text-red-500 dark:text-red-400 text-center max-w-xs">{error}</p>
+          <button
+            type="button"
+            onClick={carregar}
+            className="rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-white/[0.04] px-5 py-2 text-sm font-semibold text-gray-700 dark:text-white/60 transition-colors hover:bg-gray-100 dark:hover:bg-white/[0.08]"
           >
-            {tema}
-          </span>
+            Tentar novamente
+          </button>
         </div>
-
-        {/* Nome */}
-        <div className="space-y-1.5">
-          <label htmlFor="nome-baralho" className="block text-sm font-semibold text-gray-700 dark:text-white/60">
-            Nome do baralho
-          </label>
-          <input
-            id="nome-baralho"
-            type="text"
-            value={nome}
-            onChange={(e) => setNome(e.target.value)}
-            placeholder="Ex: Verbos Irregulares"
-            maxLength={100}
-            autoFocus
-            className="w-full rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-white/[0.04] px-4 py-3 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-white/25 outline-none transition-all duration-150 focus:border-primary dark:focus:border-cyan focus:ring-2 focus:ring-primary/20 dark:focus:ring-cyan/20"
-          />
+      ) : baralhos.length === 0 ? (
+        <EstadoVazio onCriar={() => setModalAberto(true)} />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {baralhos.map((b, i) => (
+            <BaralhoCard
+              key={b.id}
+              baralho={b}
+              index={i}
+              onEstudar={handleEstudar}
+              onVerCards={handleVerCards}
+              onExcluir={handleExcluir}
+              excluindo={excluindoId === b.id}
+            />
+          ))}
         </div>
+      )}
+      <ModalNovoBaralho
+        aberto={modalAberto}
+        onFechar={() => setModalAberto(false)}
+        onCriado={handleCriado}
+      />
+    </div>
+  );
 
         {/* Tema */}
         <div className="space-y-1.5">
