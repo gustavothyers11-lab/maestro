@@ -327,57 +327,28 @@ function EtapaTranscricao({
         return;
       }
 
-      // MP3 > 4MB: upload para Storage → Groq transcreve via URL assinada
-      // Se > 25MB, divide em partes de ~20MB com header ID3
+      // MP3 > 4MB: divide em partes de ~4MB e envia cada uma via FormData
+      // (mesmo caminho que funciona para arquivos pequenos)
       setStatusUpload('Preparando áudio…');
       const fileBytes = new Uint8Array(await arquivoMidia.arrayBuffer());
       const partes = dividirMp3EmPartes(fileBytes);
 
-      const { createClient: createBrowserSupabase } = await import('@/lib/supabase/client');
-      const supabase = createBrowserSupabase();
       const transcricoes: string[] = [];
 
       for (let i = 0; i < partes.length; i++) {
         const parteMb = (partes[i].size / (1024 * 1024)).toFixed(1);
         const label = partes.length > 1 ? ` (parte ${i + 1}/${partes.length})` : '';
 
-        // 1. Obter signed upload URL
-        setStatusUpload(`Enviando ${parteMb} MB${label}…`);
-        const storagePath = `temp/${Date.now()}_${Math.random().toString(36).slice(2)}_p${i + 1}.mp3`;
+        setStatusUpload(`Transcrevendo ${parteMb} MB${label}…`);
 
-        const urlRes = await fetch('/api/upload-audio', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: storagePath }),
-        });
-
-        if (!urlRes.ok) {
-          const errBody = await urlRes.text();
-          let msg = 'Erro ao obter URL de upload.';
-          try { msg = (JSON.parse(errBody) as { error?: string }).error || msg; } catch { /* */ }
-          throw new Error(msg);
-        }
-
-        const { token: uploadToken } = (await urlRes.json()) as { signedUrl: string; token: string; path: string };
-
-        // 2. Upload via signed URL
-        const mp3File = new File([partes[i]], `audio_p${i + 1}.mp3`, { type: 'audio/mpeg' });
-
-        const { error: uploadErr } = await supabase.storage
-          .from('audio-temp')
-          .uploadToSignedUrl(storagePath, uploadToken, mp3File, { upsert: false });
-
-        if (uploadErr) {
-          throw new Error(`Erro ao enviar para o storage: ${uploadErr.message}`);
-        }
-
-        // 3. Transcrever via URL
-        setStatusUpload(`Transcrevendo${label}…`);
+        // Envia cada chunk direto via FormData (mesmo caminho dos arquivos ≤4MB)
+        const chunkFile = new File([partes[i]], `audio_p${i + 1}.mp3`, { type: 'audio/mpeg' });
+        const formData = new FormData();
+        formData.append('audio', chunkFile, chunkFile.name);
 
         const res = await fetch(`/api/transcricao${partes.length > 1 ? '?skipRefine=1' : ''}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ storagePath }),
+          body: formData,
         });
 
         if (!res.ok) {
