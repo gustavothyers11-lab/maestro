@@ -410,9 +410,12 @@ function EtapaTranscricao({
         || arquivoMidia.type.startsWith('video/');
 
       const sizeMb = arquivoMidia.size / (1024 * 1024);
+      const isWavFile = ext === '.wav' || arquivoMidia.type === 'audio/wav';
 
-      // Arquivos pequenos de áudio: envia direto via FormData
-      if (isAudioFile && sizeMb <= 20) {
+      // WAV ≤ 20MB: pode ser dividido em chunks de 4MB e enviado via FormData
+      // Outros áudios ≤ 4MB: envia direto (dentro do limite do Vercel)
+      const maxDirectMb = isWavFile ? 20 : 4;
+      if (isAudioFile && sizeMb <= maxDirectMb) {
         setStatusUpload('Preparando áudio...');
         setTamanhoMp3Mb(sizeMb);
         await enviarParaTranscricao(arquivoMidia);
@@ -458,18 +461,33 @@ function EtapaTranscricao({
       }
 
       // ── FALLBACK: upload via Supabase Storage → Groq via URL ──────
-      // Funciona pra qualquer tamanho (iOS, vídeos grandes, etc.)
+      // Usa signed upload URL (gerada no servidor com service role) para evitar RLS
       setStatusUpload(`Enviando arquivo (${sizeMb.toFixed(1)} MB)...`);
       setTamanhoMp3Mb(sizeMb);
 
+      const storagePath = `temp/${Date.now()}_${Math.random().toString(36).slice(2)}${ext || '.mp4'}`;
+
+      // 1. Obter URL de upload assinada do servidor
+      const urlRes = await fetch('/api/upload-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: storagePath }),
+      });
+
+      if (!urlRes.ok) {
+        const urlErr = await urlRes.json().catch(() => ({}));
+        throw new Error((urlErr as { error?: string }).error || 'Erro ao obter URL de upload.');
+      }
+
+      const { token: uploadToken } = (await urlRes.json()) as { signedUrl: string; token: string; path: string };
+
+      // 2. Upload direto para Storage via signed URL (sem RLS)
       const { createClient: createBrowserSupabase } = await import('@/lib/supabase/client');
       const supabase = createBrowserSupabase();
-      const storagePath = `temp/${Date.now()}_${Math.random().toString(36).slice(2)}${ext || '.mp4'}`;
 
       const { error: uploadErr } = await supabase.storage
         .from('audio-temp')
-        .upload(storagePath, arquivoMidia, {
-          cacheControl: '300',
+        .uploadToSignedUrl(storagePath, uploadToken, arquivoMidia, {
           upsert: false,
         });
 
