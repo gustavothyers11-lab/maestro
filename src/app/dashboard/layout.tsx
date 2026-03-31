@@ -3,6 +3,7 @@
 import Sidebar from '@/components/dashboard/Sidebar';
 import MobileTopBar from '@/components/dashboard/MobileTopBar';
 import NotificacoesInit from '@/components/dashboard/NotificacoesInit';
+import AtalhoSecretoNotificacao from '@/components/dashboard/AtalhoSecretoNotificacao';
 
 export default function DashboardLayout({
   children,
@@ -12,6 +13,7 @@ export default function DashboardLayout({
   return (
     <div className="w-full min-h-screen bg-[#ffffff] dark:bg-[#0f0f1a] text-gray-900 dark:text-gray-100 transition-colors duration-300">
       <NotificacoesInit />
+      <AtalhoSecretoNotificacao />
       {/* Top bar visível apenas no mobile */}
       <MobileTopBar />
       <Sidebar />
