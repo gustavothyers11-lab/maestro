@@ -575,6 +575,29 @@ function EtapaTranscricao({
         </p>
         <div className="h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-white/15 to-transparent" />
 
+        <div className="rounded-xl border border-amber-300/60 dark:border-amber-300/30 bg-amber-50/70 dark:bg-amber-400/10 p-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-amber-700 dark:text-amber-200">
+            Dica rapida para videos grandes
+          </p>
+          <ol className="mt-2 list-decimal pl-4 space-y-1 text-xs text-amber-800 dark:text-amber-100/90">
+            <li>Converta seu video para audio no site abaixo.</li>
+            <li>Baixe o arquivo em MP3 ou M4A.</li>
+            <li>Volte aqui e envie o audio para transcrever mais rapido.</li>
+          </ol>
+          <a
+            href="https://rushtoaudio.com/pt"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-500 transition-colors"
+          >
+            Abrir rushtoaudio.com/pt
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M14 3h7m0 0v7m0-7L10 14" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 5h5M5 5v14h14v-5" />
+            </svg>
+          </a>
+        </div>
+
         <div className="rounded-xl border border-dashed border-gray-300 dark:border-white/15 bg-gray-50/70 dark:bg-white/[0.03] p-4 space-y-3">
           <label
             htmlFor="upload-video-aula"
