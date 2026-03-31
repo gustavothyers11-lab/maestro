@@ -411,66 +411,101 @@ function EtapaTranscricao({
 
     try {
       // Formatos de vídeo aceitos diretamente pelo Groq Whisper
-      const isVideoGroqCompat = ['.mp4', '.mpeg', '.mpga', '.webm'].includes(ext)
+      const isVideoGroqCompat = ['.mp4', '.mpeg', '.mpga', '.webm', '.mov'].includes(ext)
         || arquivoMidia.type.startsWith('video/');
 
-      if (isAudioFile) {
-        setStatusUpload('Preparando áudio...');
-        setTamanhoMp3Mb(arquivoMidia.size / (1024 * 1024));
-        await enviarParaTranscricao(arquivoMidia);
-        setStatusUpload('');
-        return;
-      }
+      const sizeMb = arquivoMidia.size / (1024 * 1024);
 
-      // iOS ou vídeo compatível com Groq → envia direto (sem FFmpeg)
-      if (isIOS || isVideoGroqCompat) {
-        const sizeMb = arquivoMidia.size / (1024 * 1024);
-        if (sizeMb > 25) {
-          throw new Error(`Vídeo muito grande (${sizeMb.toFixed(1)} MB). O limite é 25 MB para envio direto. Tente um vídeo mais curto ou comprima antes de enviar.`);
-        }
-        setStatusUpload('Enviando vídeo para transcrição...');
+      // Arquivos pequenos de áudio: envia direto via FormData
+      if (isAudioFile && sizeMb <= 20) {
+        setStatusUpload('Preparando áudio...');
         setTamanhoMp3Mb(sizeMb);
         await enviarParaTranscricao(arquivoMidia);
         setStatusUpload('');
         return;
       }
 
-      setStatusUpload('Preparando FFmpeg...');
-      const ffmpeg = await getFFmpeg();
+      // Vídeos pequenos (≤20MB) no desktop: usa FFmpeg local se possível
+      if (!isIOS && !isAudioFile && isVideoGroqCompat && sizeMb <= 20) {
+        try {
+          setStatusUpload('Preparando FFmpeg...');
+          const ffmpeg = await getFFmpeg();
 
-      setStatusUpload('Extraindo áudio do vídeo...');
-      await ffmpeg.writeFile(inputName, await fetchFile(arquivoMidia));
-      await ffmpeg.exec(['-i', inputName, '-vn', '-ar', '16000', '-ac', '1', '-b:a', '64k', outputName]);
+          setStatusUpload('Extraindo áudio do vídeo...');
+          await ffmpeg.writeFile(inputName, await fetchFile(arquivoMidia));
+          await ffmpeg.exec(['-i', inputName, '-vn', '-ar', '16000', '-ac', '1', '-b:a', '64k', outputName]);
 
-      setStatusUpload('Comprimindo áudio...');
-      const audioData = await ffmpeg.readFile(outputName);
-      let mp3Bytes: Uint8Array;
-      
-      if (typeof audioData === 'string') {
-        mp3Bytes = new TextEncoder().encode(audioData);
-      } else if (audioData instanceof Uint8Array) {
-        mp3Bytes = new Uint8Array(audioData);
-      } else {
-        mp3Bytes = new Uint8Array(audioData as ArrayBuffer);
+          setStatusUpload('Comprimindo áudio...');
+          const audioData = await ffmpeg.readFile(outputName);
+          let mp3Bytes: Uint8Array;
+
+          if (typeof audioData === 'string') {
+            mp3Bytes = new TextEncoder().encode(audioData);
+          } else if (audioData instanceof Uint8Array) {
+            mp3Bytes = new Uint8Array(audioData);
+          } else {
+            mp3Bytes = new Uint8Array(audioData as ArrayBuffer);
+          }
+
+          const mp3Blob = new Blob([mp3Bytes] as any[], { type: 'audio/mpeg' });
+          const mp3SizeMb = mp3Blob.size / (1024 * 1024);
+          setTamanhoMp3Mb(mp3SizeMb);
+          const mp3File = new File([mp3Blob], 'audio.mp3', { type: 'audio/mpeg' });
+          await enviarParaTranscricao(mp3File);
+
+          await ffmpeg.deleteFile(inputName).catch(() => undefined);
+          await ffmpeg.deleteFile(outputName).catch(() => undefined);
+          setStatusUpload('');
+          return;
+        } catch {
+          // FFmpeg falhou no desktop — cai no Storage upload abaixo
+        }
       }
 
-      const mp3Blob = new Blob([mp3Bytes] as any[], { type: 'audio/mpeg' });
-      const mp3SizeMb = mp3Blob.size / (1024 * 1024);
-      setTamanhoMp3Mb(mp3SizeMb);
-      const mp3File = new File([mp3Blob], 'audio.mp3', { type: 'audio/mpeg' });
-      await enviarParaTranscricao(mp3File);
+      // ── FALLBACK: upload via Supabase Storage → Groq via URL ──────
+      // Funciona pra qualquer tamanho (iOS, vídeos grandes, etc.)
+      setStatusUpload(`Enviando arquivo (${sizeMb.toFixed(1)} MB)...`);
+      setTamanhoMp3Mb(sizeMb);
 
-      await ffmpeg.deleteFile(inputName).catch(() => undefined);
-      await ffmpeg.deleteFile(outputName).catch(() => undefined);
+      const { createClient: createBrowserSupabase } = await import('@/lib/supabase/client');
+      const supabase = createBrowserSupabase();
+      const storagePath = `temp/${Date.now()}_${Math.random().toString(36).slice(2)}${ext || '.mp4'}`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from('audio-temp')
+        .upload(storagePath, arquivoMidia, {
+          cacheControl: '300',
+          upsert: false,
+        });
+
+      if (uploadErr) {
+        throw new Error(`Erro ao enviar para o storage: ${uploadErr.message}`);
+      }
+
+      setStatusUpload('Transcrevendo...');
+
+      const res = await fetch('/api/transcricao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storagePath }),
+      });
+
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || `Erro na transcrição: ${res.status}`);
+
+      const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
+      if (texto) {
+        setTranscricao(texto);
+        setSucessoUpload(`Transcrição concluída! ${texto.length.toLocaleString('pt-BR')} caracteres extraídos`);
+        requestAnimationFrame(() => { transcricaoRef.current?.focus(); });
+      } else {
+        throw new Error('Transcrição retornou vazia.');
+      }
       setStatusUpload('');
     } catch (e) {
       setStatusUpload('');
       const mensagemBase = e instanceof Error ? e.message : 'Erro ao processar e transcrever o arquivo.';
-      if (/load failed|failed to fetch|networkerror/i.test(mensagemBase)) {
-        setErroUpload('Não foi possível carregar o FFmpeg. Tente novamente ou envie um arquivo menor (até 25 MB).');
-      } else {
-        setErroUpload(mensagemBase);
-      }
+      setErroUpload(mensagemBase);
     } finally {
       setProcessandoUpload(false);
     }

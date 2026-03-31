@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 interface JsonAudioPayload {
   storageUrl?: string;
@@ -106,6 +106,49 @@ async function chamarGroqTranscricao(params: {
     if (!/expected pattern|did not match the expected pattern/i.test(texto)) {
       return ultimo;
     }
+  }
+
+  return ultimo;
+}
+
+// Transcrição via URL (para arquivos grandes no Storage)
+async function chamarGroqTranscricaoViaUrl(params: {
+  apiKey: string;
+  url: string;
+}): Promise<GroqTranscricaoResult> {
+  const { apiKey, url } = params;
+
+  const tentativas: Array<{ model: string; language?: string; response_format?: string }> = [
+    { model: 'whisper-large-v3-turbo', language: 'es', response_format: 'text' },
+    { model: 'whisper-large-v3-turbo', response_format: 'text' },
+    { model: 'whisper-large-v3', language: 'es', response_format: 'text' },
+    { model: 'whisper-large-v3', response_format: 'text' },
+  ];
+
+  let ultimo: GroqTranscricaoResult = {
+    ok: false,
+    status: 502,
+    texto: 'Falha ao transcrever via URL com Groq Whisper.',
+  };
+
+  for (const t of tentativas) {
+    const payload = new FormData();
+    payload.append('url', url);
+    payload.append('model', t.model);
+    if (t.language) payload.append('language', t.language);
+    if (t.response_format) payload.append('response_format', t.response_format);
+
+    const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: payload,
+    });
+
+    const texto = (await groqRes.text()).trim();
+    ultimo = { ok: groqRes.ok, status: groqRes.status, texto };
+
+    if (groqRes.ok) return ultimo;
+    if (!/expected pattern|did not match the expected pattern/i.test(texto)) return ultimo;
   }
 
   return ultimo;
@@ -280,19 +323,71 @@ async function refinarComSonnet(transcricao: string): Promise<string> {
 
 export async function POST(request: Request) {
   try {
-    const { audio, fileName, mimeType, erro } = await extrairAudioDaRequisicao(request);
-    if (!audio) {
-      return NextResponse.json(
-        { error: erro || 'Arquivo de áudio inválido.' },
-        { status: 400 },
-      );
-    }
-
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
         { error: 'GROQ_API_KEY não configurada no servidor.' },
         { status: 500 },
+      );
+    }
+
+    const contentType = request.headers.get('content-type') || '';
+
+    // ── VIA STORAGE (arquivos grandes / iOS) ────────────────────────────
+    // Se vier JSON com storagePath, usa URL assinada → Groq baixa direto
+    if (contentType.includes('application/json')) {
+      const body = (await request.clone().json()) as JsonAudioPayload;
+      const rawPath = body.storagePath || body.storageUrl || null;
+
+      if (typeof rawPath === 'string' && rawPath.length > 0) {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+        const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+        if (!serviceRole) {
+          return NextResponse.json({ error: 'SUPABASE_SERVICE_ROLE_KEY não configurada.' }, { status: 500 });
+        }
+
+        const supabaseAdmin = createClient(supabaseUrl, serviceRole);
+        const path = rawPath.startsWith('http')
+          ? rawPath.replace(`${supabaseUrl}/storage/v1/object/public/audio-temp/`, '')
+          : rawPath;
+
+        // Gerar URL assinada (válida por 1h)
+        const { data: signedData, error: signedErr } = await supabaseAdmin.storage
+          .from('audio-temp')
+          .createSignedUrl(path, 3600);
+
+        if (signedErr || !signedData?.signedUrl) {
+          return NextResponse.json(
+            { error: `Erro ao gerar URL assinada: ${signedErr?.message ?? 'sem URL'}` },
+            { status: 500 },
+          );
+        }
+
+        // Transcrever via URL (Groq baixa o arquivo direto do Storage)
+        const resultado = await chamarGroqTranscricaoViaUrl({ apiKey, url: signedData.signedUrl });
+
+        // Limpar arquivo do storage (best-effort, não bloqueia resposta)
+        supabaseAdmin.storage.from('audio-temp').remove([path]).catch(() => undefined);
+
+        if (!resultado.ok) {
+          return NextResponse.json(
+            { error: resultado.texto || 'Falha na transcrição via URL.' },
+            { status: resultado.status || 502 },
+          );
+        }
+
+        const transcricaoFinal = await refinarComSonnet(resultado.texto);
+        return NextResponse.json({ transcricao: transcricaoFinal });
+      }
+    }
+
+    // ── VIA UPLOAD DIRETO (arquivos pequenos) ───────────────────────────
+    const { audio, fileName, mimeType, erro } = await extrairAudioDaRequisicao(request);
+    if (!audio) {
+      return NextResponse.json(
+        { error: erro || 'Arquivo de áudio inválido.' },
+        { status: 400 },
       );
     }
 
