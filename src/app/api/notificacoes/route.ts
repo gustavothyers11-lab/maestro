@@ -2,7 +2,7 @@
 
 import { NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
-import { enviarPush, enviarPushMultiplo, enviarPushParaUsuario, parseTokens } from '@/lib/firebase-admin';
+import { enviarPushMultiplo, enviarPushParaUsuario, parseTokens } from '@/lib/firebase-admin';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -153,12 +153,13 @@ async function handleLembrete(
 }
 
 async function handleConquista(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  _supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   titulo: string,
   mensagem: string,
 ) {
-  const { data: profile, error: profileErr } = await supabase
+  const admin = createAdminClient();
+  const { data: profile, error: profileErr } = await admin
     .from('profiles')
     .select('fcm_token')
     .eq('id', userId)
@@ -190,7 +191,7 @@ async function handleConquista(
   let tokensLimpos = tokens;
   if (resultado.tokensInvalidos.length > 0) {
     tokensLimpos = tokens.filter((t) => !resultado.tokensInvalidos.includes(t));
-    await supabase.from('profiles').update({ fcm_token: JSON.stringify(tokensLimpos) }).eq('id', userId);
+    await admin.from('profiles').update({ fcm_token: JSON.stringify(tokensLimpos) }).eq('id', userId);
   }
 
   return NextResponse.json({
@@ -207,12 +208,13 @@ async function handleConquista(
 }
 
 async function handleMissaoCompleta(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  _supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   tituloMissao: string,
   xp: number,
 ) {
-  const { data: profile } = await supabase
+  const admin = createAdminClient();
+  const { data: profile } = await admin
     .from('profiles')
     .select('fcm_token')
     .eq('id', userId)
@@ -232,7 +234,7 @@ async function handleMissaoCompleta(
 
   if (resultado.tokensInvalidos.length > 0) {
     const tokensLimpos = tokens.filter((t) => !resultado.tokensInvalidos.includes(t));
-    await supabase.from('profiles').update({ fcm_token: JSON.stringify(tokensLimpos) }).eq('id', userId);
+    await admin.from('profiles').update({ fcm_token: JSON.stringify(tokensLimpos) }).eq('id', userId);
   }
 
   return NextResponse.json({ ok: true, enviados: resultado.enviados, falhas: resultado.falhas });
@@ -289,11 +291,12 @@ async function handleBroadcast(
 }
 
 async function handleStreak(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  _supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   dias: number,
 ) {
-  const { data: profile } = await supabase
+  const admin = createAdminClient();
+  const { data: profile } = await admin
     .from('profiles')
     .select('fcm_token')
     .eq('id', userId)
@@ -318,7 +321,7 @@ async function handleStreak(
 
   if (resultado.tokensInvalidos.length > 0) {
     const tokensLimpos = tokens.filter((t) => !resultado.tokensInvalidos.includes(t));
-    await supabase.from('profiles').update({ fcm_token: JSON.stringify(tokensLimpos) }).eq('id', userId);
+    await admin.from('profiles').update({ fcm_token: JSON.stringify(tokensLimpos) }).eq('id', userId);
   }
 
   return NextResponse.json({ ok: true, enviados: resultado.enviados, falhas: resultado.falhas });
