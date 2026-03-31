@@ -202,3 +202,32 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ aula: aulaCriada, notificacao }, { status: 201 });
 }
+
+// ---------------------------------------------------------------------------
+// DELETE /api/aulas?id=UUID
+// ---------------------------------------------------------------------------
+
+export async function DELETE(request: NextRequest) {
+  const supabase = await createClient();
+  const { user } = await getAuthUser(supabase);
+
+  if (!user) {
+    return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
+  }
+
+  const id = request.nextUrl.searchParams.get('id');
+  if (!id) {
+    return NextResponse.json({ error: 'ID da aula é obrigatório.' }, { status: 400 });
+  }
+
+  const { error } = await supabase
+    .from('aulas')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    return NextResponse.json({ error: `Erro ao excluir aula: ${error.message}` }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
+}
