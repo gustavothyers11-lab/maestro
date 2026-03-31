@@ -31,6 +31,29 @@ interface Resultado {
   fraseCorreta: string;
 }
 
+interface SpeechRecognitionInstance {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  maxAlternatives: number;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+type SpeechRecognitionFactory = new () => SpeechRecognitionInstance;
+
+function getSpeechRecognitionFactory(): SpeechRecognitionFactory | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as unknown as {
+    SpeechRecognition?: SpeechRecognitionFactory;
+    webkitSpeechRecognition?: SpeechRecognitionFactory;
+  };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // TTS helper
 // ---------------------------------------------------------------------------
@@ -83,7 +106,10 @@ export default function DitadoPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [fraseOuvida, setFraseOuvida] = useState(false);
   const [langCode, setLangCode] = useState('es-ES');
+  const [suportaVoz, setSuportaVoz] = useState(false);
+  const [gravando, setGravando] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
   // Carregar idioma do perfil
   useEffect(() => {
@@ -94,8 +120,23 @@ export default function DitadoPage() {
     });
   }, []);
 
+  useEffect(() => {
+    setSuportaVoz(Boolean(getSpeechRecognitionFactory()));
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
+      }
+    };
+  }, []);
+
   // ── Buscar frase ────────────────────────────────────────────────────
   const buscarFrase = useCallback(async () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setGravando(false);
     setCarregando(true);
     setErro(null);
     setResultado(null);
@@ -132,11 +173,74 @@ export default function DitadoPage() {
 
     // Focus textarea after short delay
     setTimeout(() => textareaRef.current?.focus(), 400);
-  }, [frase]);
+  }, [frase, langCode]);
+
+  const alternarGravacao = useCallback(() => {
+    if (!suportaVoz || verificando || !!resultado) return;
+
+    if (gravando && recognitionRef.current) {
+      recognitionRef.current.stop();
+      return;
+    }
+
+    const Recognition = getSpeechRecognitionFactory();
+    if (!Recognition) {
+      setErro('Seu navegador não suporta reconhecimento de voz.');
+      return;
+    }
+
+    const recognition = new Recognition();
+    recognition.lang = langCode;
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      const transcrito = Array.from(event.results)
+        .map((r) => r[0]?.transcript ?? '')
+        .join(' ')
+        .trim();
+      if (transcrito) {
+        setTexto(transcrito);
+        setFraseOuvida(true);
+        textareaRef.current?.focus();
+      }
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error === 'not-allowed') {
+        setErro('Permissão de microfone negada. Ative o microfone para usar ditado por voz.');
+      } else if (event.error && event.error !== 'aborted' && event.error !== 'no-speech') {
+        setErro(`Falha no reconhecimento de voz (${event.error}).`);
+      }
+    };
+
+    recognition.onend = () => {
+      setGravando(false);
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    setErro(null);
+    setGravando(true);
+
+    try {
+      recognition.start();
+    } catch {
+      setGravando(false);
+      recognitionRef.current = null;
+      setErro('Não foi possível iniciar a gravação. Tente novamente.');
+    }
+  }, [gravando, langCode, resultado, suportaVoz, verificando]);
 
   // ── Verificar ───────────────────────────────────────────────────────
   const verificar = useCallback(async () => {
     if (!frase || !texto.trim()) return;
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setGravando(false);
     setVerificando(true);
 
     try {
@@ -280,7 +384,29 @@ export default function DitadoPage() {
               >
                 🐢 Mais devagar
               </button>
+
+              <button
+                type="button"
+                onClick={alternarGravacao}
+                disabled={!suportaVoz || verificando || !!resultado}
+                className={`
+                  flex items-center justify-center gap-2 rounded-xl py-3.5 px-5 text-sm font-semibold
+                  transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed
+                  ${gravando
+                    ? 'border border-red-400/30 bg-red-500/15 text-red-400'
+                    : 'border border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-white/[0.04] text-gray-600 dark:text-white/50 hover:bg-gray-100 dark:hover:bg-white/[0.08] hover:text-gray-800 dark:hover:text-white/70'
+                  }
+                `}
+              >
+                {gravando ? '⏹️ Parar gravação' : '🎤 Falar resposta'}
+              </button>
             </div>
+
+            {!suportaVoz && (
+              <p className="mb-4 text-xs text-gray-500 dark:text-white/35">
+                Ditado por voz não está disponível neste navegador.
+              </p>
+            )}
 
             {/* Textarea */}
             <div className="relative mb-5">
