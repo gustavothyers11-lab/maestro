@@ -43,7 +43,7 @@ const ACCEPTED_MEDIA = '.mp3';
 // ---------------------------------------------------------------------------
 // Limite de body do Vercel: 4.5 MB. Usamos 4 MB como margem segura.
 // ---------------------------------------------------------------------------
-const MAX_CHUNK_BYTES = 4 * 1024 * 1024;
+const MAX_CHUNK_BYTES = 3.5 * 1024 * 1024;
 
 /**
  * Encontra o offset do frame sync MP3 mais próximo (para trás) a partir de `pos`.
@@ -263,7 +263,8 @@ function EtapaTranscricao({
       const formData = new FormData();
       formData.append('audio', chunks[i], chunks[i].name);
 
-      const res = await fetch('/api/transcricao', {
+      // skipRefine=1 para pular refinamento Sonnet em cada parte (economiza tempo)
+      const res = await fetch(`/api/transcricao${chunks.length > 1 ? '?skipRefine=1' : ''}`, {
         method: 'POST',
         body: formData,
       });

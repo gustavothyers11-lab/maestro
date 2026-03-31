@@ -61,11 +61,8 @@ async function chamarGroqTranscricao(params: {
 
   const tentativasPayload: Array<{ model: string; language?: string; response_format?: string }> = [
     { model: 'whisper-large-v3-turbo', language: 'es', response_format: 'text' },
-    { model: 'whisper-large-v3-turbo', response_format: 'text' },
     { model: 'whisper-large-v3', language: 'es', response_format: 'text' },
-    { model: 'whisper-large-v3', response_format: 'text' },
-    { model: 'whisper-large-v3-turbo' },
-    { model: 'whisper-large-v3' },
+    { model: 'whisper-large-v3-turbo', response_format: 'text' },
   ];
 
   let ultimo: GroqTranscricaoResult = {
@@ -331,6 +328,8 @@ export async function POST(request: Request) {
       );
     }
 
+    const url = new URL(request.url);
+    const skipRefine = url.searchParams.get('skipRefine') === '1';
     const contentType = request.headers.get('content-type') || '';
 
     // ── VIA STORAGE (arquivos grandes / iOS) ────────────────────────────
@@ -377,7 +376,7 @@ export async function POST(request: Request) {
           );
         }
 
-        const transcricaoFinal = await refinarComSonnet(resultado.texto);
+        const transcricaoFinal = skipRefine ? resultado.texto : await refinarComSonnet(resultado.texto);
         return NextResponse.json({ transcricao: transcricaoFinal });
       }
     }
@@ -427,7 +426,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const transcricaoFinal = await refinarComSonnet(ultimo.texto);
+    const transcricaoFinal = skipRefine ? ultimo.texto : await refinarComSonnet(ultimo.texto);
     return NextResponse.json({ transcricao: transcricaoFinal });
   } catch (e) {
     return NextResponse.json(
