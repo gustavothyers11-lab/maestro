@@ -43,7 +43,7 @@ const ACCEPTED_MEDIA = '.mp3';
 // ---------------------------------------------------------------------------
 // Limite de body do Vercel: 4.5 MB. Usamos 4 MB como margem segura.
 // ---------------------------------------------------------------------------
-const MAX_CHUNK_BYTES = 3.5 * 1024 * 1024;
+const MAX_CHUNK_BYTES = 2 * 1024 * 1024;
 
 /**
  * Encontra o offset do frame sync MP3 mais próximo (para trás) a partir de `pos`.
@@ -269,8 +269,25 @@ function EtapaTranscricao({
         body: formData,
       });
 
-      const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || `Erro na parte ${i + 1}: ${res.status}`);
+      if (!res.ok) {
+        // Vercel pode retornar HTML em vez de JSON (timeout, body limit, etc)
+        const textoErro = await res.text();
+        let msgErro = `Erro na parte ${i + 1}: ${res.status}`;
+        try {
+          const parsed = JSON.parse(textoErro) as { error?: string };
+          if (parsed.error) msgErro = parsed.error;
+        } catch {
+          // Extrair mensagem útil de HTML do Vercel
+          if (res.status === 504 || textoErro.includes('FUNCTION_INVOCATION_TIMEOUT')) {
+            msgErro = `Parte ${i + 1}: timeout do servidor. Tente um arquivo menor.`;
+          } else if (res.status === 413) {
+            msgErro = `Parte ${i + 1}: arquivo muito grande para o servidor.`;
+          }
+        }
+        throw new Error(msgErro);
+      }
+
+      const payload = await res.json() as { transcricao?: string };
 
       const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
       if (texto) partes.push(texto);
