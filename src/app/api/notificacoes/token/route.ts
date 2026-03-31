@@ -2,7 +2,7 @@
 // Evita race conditions do client-side read-modify-write
 
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -122,8 +122,9 @@ export async function GET() {
     }
   }
 
-  // Todos os usuários com token no sistema (para visibilidade do broadcast)
-  const { data: allProfiles } = await supabase
+  // Todos os usuários com token no sistema (admin bypasses RLS)
+  const admin = createAdminClient();
+  const { data: allProfiles } = await admin
     .from('profiles')
     .select('id, fcm_token')
     .not('fcm_token', 'is', null);

@@ -1,7 +1,7 @@
 // API de notificações — lembrete e conquista via Firebase Cloud Messaging
 
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { enviarPush, enviarPushMultiplo, enviarPushParaUsuario, parseTokens } from '@/lib/firebase-admin';
 
 // ---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
     }
     const titulo = typeof body.titulo === 'string' ? body.titulo : '🔔 Notificação';
     const mensagem = typeof body.mensagem === 'string' ? body.mensagem : 'Nova mensagem do Maestro!';
-    return await handleBroadcast(supabase, titulo, mensagem);
+    return await handleBroadcast(titulo, mensagem);
   }
 
   return NextResponse.json({ error: 'Tipo desconhecido. Use: lembrete, conquista, missao_completa, streak, broadcast.' }, { status: 400 });
@@ -93,21 +93,22 @@ export async function POST(request: Request) {
 // ---------------------------------------------------------------------------
 
 async function handleLembrete(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  _supabase: Awaited<ReturnType<typeof createClient>>,
 ) {
+  const admin = createAdminClient();
   // Busca usuários que não estudaram hoje e têm token FCM
   const hojeInicio = inicioDoDia();
 
   // IDs que estudaram hoje
-  const { data: estudaramHoje } = await supabase
+  const { data: estudaramHoje } = await admin
     .from('progresso')
     .select('user_id')
     .gte('respondido_em', hojeInicio);
 
   const idsAtivos = new Set((estudaramHoje ?? []).map((r) => r.user_id));
 
-  // Busca todos os profiles com FCM token
-  const { data: profiles } = await supabase
+  // Busca todos os profiles com FCM token (admin bypasses RLS)
+  const { data: profiles } = await admin
     .from('profiles')
     .select('id, fcm_token')
     .not('fcm_token', 'is', null);
@@ -124,7 +125,7 @@ async function handleLembrete(
   }
 
   // Conta cards vencidos por usuário (média para mensagem genérica)
-  const { count: totalVencidos } = await supabase
+  const { count: totalVencidos } = await admin
     .from('cards')
     .select('*', { count: 'exact', head: true })
     .lte('proximo_revisao', new Date().toISOString());
@@ -230,12 +231,12 @@ async function handleMissaoCompleta(
 }
 
 async function handleBroadcast(
-  supabase: Awaited<ReturnType<typeof createClient>>,
   titulo: string,
   mensagem: string,
 ) {
-  // Busca TODOS os profiles com FCM token
-  const { data: profiles } = await supabase
+  const admin = createAdminClient();
+  // Busca TODOS os profiles com FCM token (admin bypasses RLS)
+  const { data: profiles } = await admin
     .from('profiles')
     .select('id, fcm_token')
     .not('fcm_token', 'is', null);
@@ -264,7 +265,7 @@ async function handleBroadcast(
     // Limpar tokens inválidos
     if (resultado.tokensInvalidos.length > 0) {
       const tokensLimpos = tokens.filter((t) => !resultado.tokensInvalidos.includes(t));
-      await supabase.from('profiles').update({ fcm_token: JSON.stringify(tokensLimpos) }).eq('id', profile.id);
+      await admin.from('profiles').update({ fcm_token: JSON.stringify(tokensLimpos) }).eq('id', profile.id);
     }
   }
 
