@@ -41,6 +41,82 @@ const CATEGORIAS_AULA: Array<{ value: CategoriaAula; label: string; descricao: s
 const ACCEPTED_MEDIA = '.mp3';
 
 // ---------------------------------------------------------------------------
+// Groq URL limit = 25 MB. Usamos 20 MB como margem segura.
+// ---------------------------------------------------------------------------
+const MAX_GROQ_URL_BYTES = 20 * 1024 * 1024;
+
+/**
+ * Encontra o tamanho do header ID3v2 de um MP3 (se houver).
+ * Retorna 0 se não tiver ID3v2.
+ */
+function tamanhoHeaderId3(bytes: Uint8Array): number {
+  // ID3v2 header: "ID3" + 2 bytes versão + 1 byte flags + 4 bytes tamanho (syncsafe)
+  if (bytes.length < 10) return 0;
+  if (bytes[0] !== 0x49 || bytes[1] !== 0x44 || bytes[2] !== 0x33) return 0; // "ID3"
+
+  const size =
+    ((bytes[6] & 0x7f) << 21) |
+    ((bytes[7] & 0x7f) << 14) |
+    ((bytes[8] & 0x7f) << 7) |
+    (bytes[9] & 0x7f);
+
+  return 10 + size;
+}
+
+/**
+ * Encontra o frame sync MP3 mais próximo (para trás) a partir de `pos`.
+ */
+function encontrarFrameSync(bytes: Uint8Array, pos: number): number {
+  for (let i = Math.min(pos, bytes.length - 2); i >= 0; i--) {
+    if (bytes[i] === 0xff && (bytes[i + 1] & 0xe0) === 0xe0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Divide um MP3 grande em partes ≤ 20 MB.
+ * Cada chunk recebe o header ID3v2 original (se houver) para ser reconhecido pelo Groq.
+ */
+function dividirMp3EmPartes(fileBytes: Uint8Array): Blob[] {
+  if (fileBytes.length <= MAX_GROQ_URL_BYTES) {
+    return [new Blob([fileBytes as unknown as BlobPart], { type: 'audio/mpeg' })];
+  }
+
+  const id3Len = tamanhoHeaderId3(fileBytes);
+  const id3Header = id3Len > 0 ? fileBytes.slice(0, id3Len) : null;
+  const audioStart = id3Len;
+  const maxAudioPerChunk = MAX_GROQ_URL_BYTES - (id3Header ? id3Header.length : 0);
+
+  const partes: Blob[] = [];
+  let offset = audioStart;
+
+  while (offset < fileBytes.length) {
+    let end = offset + maxAudioPerChunk;
+
+    if (end >= fileBytes.length) {
+      end = fileBytes.length;
+    } else {
+      const syncPos = encontrarFrameSync(fileBytes, end);
+      if (syncPos > offset) {
+        end = syncPos;
+      }
+    }
+
+    const audioData = fileBytes.slice(offset, end);
+    const blobParts = id3Header
+      ? [id3Header as unknown as BlobPart, audioData as unknown as BlobPart]
+      : [audioData as unknown as BlobPart];
+    partes.push(new Blob(blobParts, { type: 'audio/mpeg' }));
+
+    offset = end;
+  }
+
+  return partes;
+}
+
+// ---------------------------------------------------------------------------
 // Stepper visual
 // ---------------------------------------------------------------------------
 
@@ -251,59 +327,79 @@ function EtapaTranscricao({
       }
 
       // MP3 > 4MB: upload para Storage → Groq transcreve via URL assinada
-      setStatusUpload(`Enviando arquivo (${sizeMb.toFixed(1)} MB)…`);
+      // Se > 25MB, divide em partes de ~20MB com header ID3
+      setStatusUpload('Preparando áudio…');
+      const fileBytes = new Uint8Array(await arquivoMidia.arrayBuffer());
+      const partes = dividirMp3EmPartes(fileBytes);
 
-      const storagePath = `temp/${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`;
-
-      // Obter URL de upload assinada do servidor (usa service role, sem RLS)
-      const urlRes = await fetch('/api/upload-audio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: storagePath }),
-      });
-
-      if (!urlRes.ok) {
-        const errBody = await urlRes.text();
-        let msg = 'Erro ao obter URL de upload.';
-        try { msg = (JSON.parse(errBody) as { error?: string }).error || msg; } catch { /* */ }
-        throw new Error(msg);
-      }
-
-      const { token: uploadToken } = (await urlRes.json()) as { signedUrl: string; token: string; path: string };
-
-      // Upload via signed URL
       const { createClient: createBrowserSupabase } = await import('@/lib/supabase/client');
       const supabase = createBrowserSupabase();
+      const transcricoes: string[] = [];
 
-      const { error: uploadErr } = await supabase.storage
-        .from('audio-temp')
-        .uploadToSignedUrl(storagePath, uploadToken, arquivoMidia, { upsert: false });
+      for (let i = 0; i < partes.length; i++) {
+        const parteMb = (partes[i].size / (1024 * 1024)).toFixed(1);
+        const label = partes.length > 1 ? ` (parte ${i + 1}/${partes.length})` : '';
 
-      if (uploadErr) {
-        throw new Error(`Erro ao enviar para o storage: ${uploadErr.message}`);
+        // 1. Obter signed upload URL
+        setStatusUpload(`Enviando ${parteMb} MB${label}…`);
+        const storagePath = `temp/${Date.now()}_${Math.random().toString(36).slice(2)}_p${i + 1}.mp3`;
+
+        const urlRes = await fetch('/api/upload-audio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: storagePath }),
+        });
+
+        if (!urlRes.ok) {
+          const errBody = await urlRes.text();
+          let msg = 'Erro ao obter URL de upload.';
+          try { msg = (JSON.parse(errBody) as { error?: string }).error || msg; } catch { /* */ }
+          throw new Error(msg);
+        }
+
+        const { token: uploadToken } = (await urlRes.json()) as { signedUrl: string; token: string; path: string };
+
+        // 2. Upload via signed URL
+        const mp3File = new File([partes[i]], `audio_p${i + 1}.mp3`, { type: 'audio/mpeg' });
+
+        const { error: uploadErr } = await supabase.storage
+          .from('audio-temp')
+          .uploadToSignedUrl(storagePath, uploadToken, mp3File, { upsert: false });
+
+        if (uploadErr) {
+          throw new Error(`Erro ao enviar para o storage: ${uploadErr.message}`);
+        }
+
+        // 3. Transcrever via URL
+        setStatusUpload(`Transcrevendo${label}…`);
+
+        const res = await fetch(`/api/transcricao${partes.length > 1 ? '?skipRefine=1' : ''}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ storagePath }),
+        });
+
+        if (!res.ok) {
+          const textoErro = await res.text();
+          let msgErro = `Erro na transcrição${label}: ${res.status}`;
+          try { msgErro = (JSON.parse(textoErro) as { error?: string }).error || msgErro; } catch { /* */ }
+          throw new Error(msgErro);
+        }
+
+        const payload = await res.json() as { transcricao?: string };
+        const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
+        if (texto) transcricoes.push(texto);
       }
 
-      setStatusUpload('Transcrevendo (pode levar 1-2 min)…');
+      const textoFinal = transcricoes.join('\n\n');
+      if (!textoFinal) throw new Error('Transcrição retornou vazia.');
 
-      const res = await fetch('/api/transcricao', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storagePath }),
-      });
-
-      if (!res.ok) {
-        const textoErro = await res.text();
-        let msgErro = `Erro na transcrição: ${res.status}`;
-        try { msgErro = (JSON.parse(textoErro) as { error?: string }).error || msgErro; } catch { /* */ }
-        throw new Error(msgErro);
-      }
-
-      const payload = await res.json() as { transcricao?: string };
-      const texto = typeof payload.transcricao === 'string' ? payload.transcricao : '';
-      if (!texto) throw new Error('Transcrição retornou vazia.');
-
-      setTranscricao(texto);
-      setSucessoUpload(`Transcrição concluída! ${texto.length.toLocaleString('pt-BR')} caracteres extraídos`);
+      setTranscricao(textoFinal);
+      setSucessoUpload(
+        partes.length > 1
+          ? `Transcrição concluída! ${partes.length} partes — ${textoFinal.length.toLocaleString('pt-BR')} caracteres`
+          : `Transcrição concluída! ${textoFinal.length.toLocaleString('pt-BR')} caracteres extraídos`,
+      );
       requestAnimationFrame(() => { transcricaoRef.current?.focus(); });
       setStatusUpload('');
     } catch (e) {
