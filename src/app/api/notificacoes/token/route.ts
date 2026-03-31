@@ -123,33 +123,39 @@ export async function GET() {
   }
 
   // Todos os usuários com token no sistema (admin bypasses RLS)
-  const admin = createAdminClient();
-  const { data: allProfiles } = await admin
-    .from('profiles')
-    .select('id, fcm_token')
-    .not('fcm_token', 'is', null);
+  let sistema: { usuariosComToken: number; totalTokens: number; outrosUsuarios: { userId: string; tokens: number }[]; erro?: string } = {
+    usuariosComToken: 0,
+    totalTokens: 0,
+    outrosUsuarios: [],
+  };
 
-  let totalUsuariosComToken = 0;
-  let totalTokensSistema = 0;
-  const outrosUsuarios: { userId: string; tokens: number }[] = [];
+  try {
+    const admin = createAdminClient();
+    const { data: allProfiles } = await admin
+      .from('profiles')
+      .select('id, fcm_token')
+      .not('fcm_token', 'is', null);
 
-  if (allProfiles) {
-    for (const p of allProfiles) {
-      let pTokens: string[] = [];
-      try {
-        const parsed = JSON.parse(p.fcm_token);
-        pTokens = Array.isArray(parsed) ? parsed.filter((t: unknown) => typeof t === 'string' && t.length > 0) : [p.fcm_token];
-      } catch {
-        pTokens = [p.fcm_token];
-      }
-      if (pTokens.length > 0) {
-        totalUsuariosComToken++;
-        totalTokensSistema += pTokens.length;
-        if (p.id !== user.id) {
-          outrosUsuarios.push({ userId: p.id.slice(0, 8) + '...', tokens: pTokens.length });
+    if (allProfiles) {
+      for (const p of allProfiles) {
+        let pTokens: string[] = [];
+        try {
+          const parsed = JSON.parse(p.fcm_token);
+          pTokens = Array.isArray(parsed) ? parsed.filter((t: unknown) => typeof t === 'string' && t.length > 0) : [p.fcm_token];
+        } catch {
+          pTokens = [p.fcm_token];
+        }
+        if (pTokens.length > 0) {
+          sistema.usuariosComToken++;
+          sistema.totalTokens += pTokens.length;
+          if (p.id !== user.id) {
+            sistema.outrosUsuarios.push({ userId: p.id.slice(0, 8) + '...', tokens: pTokens.length });
+          }
         }
       }
     }
+  } catch (err) {
+    sistema.erro = err instanceof Error ? err.message : 'Erro ao buscar sistema';
   }
 
   return NextResponse.json({
@@ -157,10 +163,6 @@ export async function GET() {
     userId: user.id,
     total: tokens.length,
     tokens: tokens.map((t) => t.slice(0, 30) + '...'),
-    sistema: {
-      usuariosComToken: totalUsuariosComToken,
-      totalTokens: totalTokensSistema,
-      outrosUsuarios,
-    },
+    sistema,
   });
 }

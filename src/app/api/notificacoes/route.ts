@@ -39,7 +39,11 @@ export async function POST(request: Request) {
 
   // ── LEMBRETE ─────────────────────────────────────────────────────────
   if (tipo === 'lembrete') {
-    return await handleLembrete(supabase);
+    try {
+      return await handleLembrete(supabase);
+    } catch (err) {
+      return NextResponse.json({ error: `Lembrete falhou: ${err instanceof Error ? err.message : String(err)}` }, { status: 500 });
+    }
   }
 
   // ── CONQUISTA ─────────────────────────────────────────────────────────
@@ -82,7 +86,11 @@ export async function POST(request: Request) {
     }
     const titulo = typeof body.titulo === 'string' ? body.titulo : '🔔 Notificação';
     const mensagem = typeof body.mensagem === 'string' ? body.mensagem : 'Nova mensagem do Maestro!';
-    return await handleBroadcast(titulo, mensagem);
+    try {
+      return await handleBroadcast(titulo, mensagem);
+    } catch (err) {
+      return NextResponse.json({ error: `Broadcast falhou: ${err instanceof Error ? err.message : String(err)}` }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ error: 'Tipo desconhecido. Use: lembrete, conquista, missao_completa, streak, broadcast.' }, { status: 400 });
