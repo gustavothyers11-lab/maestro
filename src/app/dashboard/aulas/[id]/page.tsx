@@ -50,6 +50,7 @@ export default function AulaDetalhePage() {
   const [observacaoMaterial, setObservacaoMaterial] = useState('');
   const [arquivoMaterial, setArquivoMaterial] = useState<File | null>(null);
   const [uploadingMaterial, setUploadingMaterial] = useState(false);
+  const [gerandoPdf, setGerandoPdf] = useState(false);
 
   const carregarAula = useCallback(async () => {
     if (!aulaId) return;
@@ -208,6 +209,133 @@ export default function AulaDetalhePage() {
     if (!aula) return;
     await salvarMateriais((aula.materiais ?? []).filter((item) => item.id !== materialId));
   }, [aula, salvarMateriais]);
+
+  const gerarPdfExplicativo = useCallback(async () => {
+    if (!aula || !aulaId) return;
+
+    setGerandoPdf(true);
+    setErro('');
+
+    try {
+      const res = await fetch(`/api/aulas/${aulaId}/pdf-explicativo`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro ao gerar conteúdo do PDF.');
+      }
+
+      const conteudo = data.conteudo as {
+        titulo: string;
+        secoes: Array<{ titulo: string; conteudo: string }>;
+      };
+
+      // Gerar PDF via jsPDF
+      const { default: jsPDF } = await import('jspdf');
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const marginLeft = 20;
+      const marginRight = 20;
+      const maxWidth = pageWidth - marginLeft - marginRight;
+      let y = 25;
+
+      const checkNewPage = (needed: number) => {
+        if (y + needed > pageHeight - 20) {
+          doc.addPage();
+          y = 20;
+        }
+      };
+
+      // Título principal
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      const tituloLinhas = doc.splitTextToSize(conteudo.titulo || aula.titulo, maxWidth);
+      checkNewPage(tituloLinhas.length * 8 + 10);
+      doc.text(tituloLinhas, marginLeft, y);
+      y += tituloLinhas.length * 8 + 4;
+
+      // Linha decorativa
+      doc.setDrawColor(0, 180, 216);
+      doc.setLineWidth(0.8);
+      doc.line(marginLeft, y, pageWidth - marginRight, y);
+      y += 10;
+
+      // Seções
+      for (const secao of conteudo.secoes) {
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        const secTituloLinhas = doc.splitTextToSize(secao.titulo, maxWidth);
+        checkNewPage(secTituloLinhas.length * 6 + 12);
+        doc.setTextColor(0, 120, 180);
+        doc.text(secTituloLinhas, marginLeft, y);
+        doc.setTextColor(0, 0, 0);
+        y += secTituloLinhas.length * 6 + 4;
+
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+
+        const paragrafos = secao.conteudo.split('\n');
+        for (const paragrafo of paragrafos) {
+          if (!paragrafo.trim()) {
+            y += 3;
+            continue;
+          }
+          const linhas = doc.splitTextToSize(paragrafo, maxWidth);
+          checkNewPage(linhas.length * 5 + 4);
+          doc.text(linhas, marginLeft, y);
+          y += linhas.length * 5 + 2;
+        }
+
+        y += 6;
+      }
+
+      // Rodapé
+      const totalPages = doc.getNumberOfPages();
+      for (let p = 1; p <= totalPages; p++) {
+        doc.setPage(p);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(150, 150, 150);
+        doc.text(`Maestro — ${aula.titulo} — Página ${p}/${totalPages}`, marginLeft, pageHeight - 10);
+        doc.setTextColor(0, 0, 0);
+      }
+
+      // Upload para Supabase Storage
+      const pdfBlob = doc.output('blob');
+      const pdfFile = new File([pdfBlob], `explicativo_${aulaId}.pdf`, { type: 'application/pdf' });
+
+      const formData = new FormData();
+      formData.append('file', pdfFile);
+      formData.append('aulaId', aulaId);
+
+      const uploadRes = await fetch('/api/aulas/material-upload-url', {
+        method: 'POST',
+        body: formData,
+      });
+      const uploadData = await uploadRes.json().catch(() => ({}));
+
+      if (!uploadRes.ok || !uploadData.publicUrl) {
+        throw new Error('Erro ao salvar o PDF gerado.');
+      }
+
+      // Adicionar como material
+      const novoMaterial: MaterialAula = {
+        id: crypto.randomUUID(),
+        titulo: conteudo.titulo || `Material explicativo — ${aula.titulo}`,
+        tipo: 'pdf',
+        url: uploadData.publicUrl as string,
+        observacao: 'PDF explicativo gerado automaticamente pela IA',
+        criadoEm: new Date().toISOString(),
+      };
+
+      await salvarMateriais([...(aula.materiais ?? []), novoMaterial]);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : 'Erro ao gerar PDF explicativo.');
+    } finally {
+      setGerandoPdf(false);
+    }
+  }, [aula, aulaId, salvarMateriais]);
 
   const gerarPronuncia = useCallback(async () => {
     if (!aulaId) return;
@@ -378,6 +506,43 @@ export default function AulaDetalhePage() {
                   placeholder="https://..."
                   className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 outline-none focus:border-cyan/50 focus:ring-2 focus:ring-cyan/20 dark:border-white/10 dark:bg-white/5 dark:text-white"
                 />
+
+                <div className="rounded-xl border border-dashed border-cyan/30 bg-cyan/5 p-4 dark:bg-cyan/5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-gray-800 dark:text-white/80">PDF explicativo com IA</p>
+                      <p className="text-xs text-gray-500 dark:text-white/40">
+                        Gera um PDF didático baseado na transcrição da aula.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void gerarPdfExplicativo()}
+                      disabled={gerandoPdf || !aula?.transcricao?.trim()}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary to-cyan px-4 py-2 text-sm font-bold text-white shadow-md shadow-primary/20 transition-all hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {gerandoPdf ? (
+                        <>
+                          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          Gerando PDF…
+                        </>
+                      ) : (
+                        <>
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          Gerar PDF
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  {!aula?.transcricao?.trim() && (
+                    <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">A aula precisa ter uma transcrição para gerar o PDF.</p>
+                  )}
+                </div>
 
                 <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50/80 p-4 dark:border-white/10 dark:bg-white/5">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
