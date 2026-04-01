@@ -17,6 +17,20 @@ interface Dialogo {
   turnos: Turno[];
 }
 
+interface Diferenca {
+  esperado: string;
+  escrito: string;
+}
+
+interface ResultadoValidacao {
+  acertou: boolean;
+  nota: number;
+  feedback: string;
+  diferencas: Diferenca[];
+  dicas?: string;
+  fraseCorreta: string;
+}
+
 const DIALOGOS: Record<string, Dialogo> = {
   es: {
     titulo: 'Conversa no cafe',
@@ -106,24 +120,45 @@ function similaridade(fraseEsperada: string, fraseDigitada: string): number {
   return maxLen === 0 ? 1 : 1 - dist / maxLen;
 }
 
-function falar(texto: string, lang: string, rate = 0.9) {
-  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+function falar(texto: string, lang: string, rate = 0.9): Promise<void> {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return Promise.resolve();
 
-  const utter = new SpeechSynthesisUtterance(texto);
-  utter.lang = lang;
-  utter.rate = rate;
+  return new Promise((resolve) => {
+    const utter = new SpeechSynthesisUtterance(texto);
+    utter.lang = lang;
+    utter.rate = rate;
 
-  const voices = window.speechSynthesis.getVoices();
-  const prefix = lang.split('-')[0].toLowerCase();
-  const candidatas = voices.filter((v) => v.lang.toLowerCase().startsWith(prefix));
-  const preferida =
-    candidatas.find((v) => /google|microsoft|natural|neural/i.test(v.name)) ??
-    candidatas[0];
+    const voices = window.speechSynthesis.getVoices();
+    const prefix = lang.split('-')[0].toLowerCase();
+    const candidatas = voices.filter((v) => v.lang.toLowerCase().startsWith(prefix));
+    const preferida =
+      candidatas.find((v) => /google|microsoft|natural|neural/i.test(v.name)) ??
+      candidatas[0];
 
-  if (preferida) utter.voice = preferida;
+    if (preferida) utter.voice = preferida;
 
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(utter);
+    utter.onend = () => resolve();
+    utter.onerror = () => resolve();
+
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utter);
+  });
+}
+
+function extrairDiferencas(esperado: string, escrito: string): Diferenca[] {
+  const esperadoPalavras = normalizarTexto(esperado).split(' ').filter(Boolean);
+  const escritoPalavras = normalizarTexto(escrito).split(' ').filter(Boolean);
+  const max = Math.max(esperadoPalavras.length, escritoPalavras.length);
+  const difs: Diferenca[] = [];
+
+  for (let i = 0; i < max; i += 1) {
+    const e = esperadoPalavras[i] ?? '(faltou)';
+    const k = escritoPalavras[i] ?? '(vazio)';
+    if (e !== k) difs.push({ esperado: e, escrito: k });
+    if (difs.length >= 8) break;
+  }
+
+  return difs;
 }
 
 export default function ConversaDigitadaPageClient() {
@@ -131,7 +166,9 @@ export default function ConversaDigitadaPageClient() {
   const [dialogo, setDialogo] = useState<Dialogo>(DIALOGOS.es);
   const [indiceAtual, setIndiceAtual] = useState(0);
   const [resposta, setResposta] = useState('');
-  const [feedback, setFeedback] = useState('');
+  const [resultado, setResultado] = useState<ResultadoValidacao | null>(null);
+  const [tocandoConversa, setTocandoConversa] = useState(false);
+  const [indiceFalando, setIndiceFalando] = useState<number | null>(null);
   const [acertos, setAcertos] = useState(0);
   const [tentativas, setTentativas] = useState(0);
   const [segundosRestantes, setSegundosRestantes] = useState(10 * 60);
@@ -176,30 +213,78 @@ export default function ConversaDigitadaPageClient() {
     setDialogo((d) => escolherDialogo(langCode) || d);
     setIndiceAtual(0);
     setResposta('');
-    setFeedback('');
+    setResultado(null);
+    setTocandoConversa(false);
+    setIndiceFalando(null);
     setAcertos(0);
     setTentativas(0);
     setSegundosRestantes(10 * 60);
   }, [langCode]);
 
+  const tocarConversaCompleta = useCallback(async () => {
+    if (tocandoConversa || finalizado) return;
+    setTocandoConversa(true);
+    setResultado(null);
+    try {
+      for (let i = 0; i < dialogo.turnos.length; i += 1) {
+        setIndiceFalando(i);
+        await falar(dialogo.turnos[i].texto, langCode, 0.88);
+        await new Promise((r) => setTimeout(r, 260));
+      }
+    } finally {
+      setIndiceFalando(null);
+      setTocandoConversa(false);
+    }
+  }, [dialogo.turnos, finalizado, langCode, tocandoConversa]);
+
   const validar = useCallback(() => {
     if (!turnoAtual || !resposta.trim()) return;
 
     const score = similaridade(turnoAtual.texto, resposta);
+    const nota = Math.max(0, Math.min(100, Math.round(score * 100)));
+    const diferencas = extrairDiferencas(turnoAtual.texto, resposta);
     setTentativas((t) => t + 1);
 
-    if (score >= 0.82) {
+    const acertou = score >= 0.82;
+
+    if (acertou) {
       setAcertos((a) => a + 1);
-      setFeedback(`Boa! Similaridade ${Math.round(score * 100)}%.`);
+      setResultado({
+        acertou: true,
+        nota,
+        feedback: `Boa! Similaridade ${nota}%.`,
+        diferencas,
+        fraseCorreta: turnoAtual.texto,
+        dicas: 'Mantenha o ritmo da conversa e tente repetir com a mesma entonacao.',
+      });
       setIndiceAtual((i) => i + 1);
       setResposta('');
       return;
     }
 
-    setFeedback(
-      `Quase la (${Math.round(score * 100)}%). Tente novamente. Dica: ${turnoAtual.traducao}`,
-    );
+    setResultado({
+      acertou: false,
+      nota,
+      feedback: `Quase la (${nota}%). Tente novamente.`,
+      diferencas,
+      fraseCorreta: turnoAtual.texto,
+      dicas: `Dica em portugues: ${turnoAtual.traducao}`,
+    });
   }, [resposta, turnoAtual]);
+
+  const notaCor =
+    resultado && resultado.nota >= 90
+      ? 'text-emerald-400'
+      : resultado && resultado.nota >= 60
+        ? 'text-amber-400'
+        : 'text-red-400';
+
+  const notaBg =
+    resultado && resultado.nota >= 90
+      ? 'from-emerald-500/10 to-emerald-500/5 border-emerald-500/20'
+      : resultado && resultado.nota >= 60
+        ? 'from-amber-500/10 to-amber-500/5 border-amber-500/20'
+        : 'from-red-500/10 to-red-500/5 border-red-500/20';
 
   return (
     <div className="min-h-screen bg-[#0f0f1a] px-4 py-8 sm:px-6 lg:px-8 text-white">
@@ -253,6 +338,39 @@ export default function ConversaDigitadaPageClient() {
                 <p className="text-xs text-white/45 mt-2">Dica em portugues: {turnoAtual.traducao}</p>
               </div>
 
+              <div className="rounded-xl border border-cyan-400/20 bg-cyan-500/10 p-3">
+                <button
+                  type="button"
+                  onClick={tocarConversaCompleta}
+                  disabled={tocandoConversa}
+                  className="rounded-lg bg-cyan-500/20 border border-cyan-300/30 px-4 py-2 text-xs font-bold text-cyan-100 hover:bg-cyan-500/30 disabled:opacity-60"
+                >
+                  {tocandoConversa ? 'Tocando conversa A/B...' : 'Tocar conversa completa (A e B)'}
+                </button>
+                <p className="mt-2 text-[11px] text-cyan-100/80">
+                  Agora a conversa flui entre as duas pessoas sem depender da validacao.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                {dialogo.turnos.map((turno, i) => {
+                  const ativo = i === indiceFalando;
+                  return (
+                    <div
+                      key={`${turno.speaker}-${i}`}
+                      className={`rounded-lg border px-3 py-2 text-sm transition-all ${
+                        ativo
+                          ? 'border-cyan-300/50 bg-cyan-500/15 text-cyan-100'
+                          : 'border-white/10 bg-white/5 text-white/70'
+                      }`}
+                    >
+                      <span className="font-bold mr-2">{turno.speaker}:</span>
+                      {turno.texto}
+                    </div>
+                  );
+                })}
+              </div>
+
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -294,12 +412,78 @@ export default function ConversaDigitadaPageClient() {
                 >
                   Limpar
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setResultado(null)}
+                  className="rounded-xl border border-white/15 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white/85 hover:bg-white/10 transition"
+                >
+                  Limpar resultado
+                </button>
               </div>
 
-              {feedback && (
-                <p className="rounded-xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100">
-                  {feedback}
-                </p>
+              {resultado && (
+                <div className="space-y-4">
+                  <div className={`rounded-xl border bg-gradient-to-br ${notaBg} p-5`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <span className={`text-4xl font-black tabular-nums ${notaCor}`}>
+                          {resultado.nota}
+                        </span>
+                        <div>
+                          <p className="text-sm font-bold text-white">
+                            {resultado.nota >= 90 ? 'Excelente!' : resultado.nota >= 60 ? 'Quase la!' : 'Continue tentando!'}
+                          </p>
+                          <p className="text-xs text-white/70 mt-0.5">{resultado.feedback}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="relative h-2 w-full overflow-hidden rounded-full bg-white/[0.10]">
+                      <div
+                        className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-[#1260CC] to-[#0ABFDE]"
+                        style={{ width: `${resultado.nota}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {resultado.diferencas.length > 0 && (
+                    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+                      <h3 className="text-xs font-bold text-white/60 uppercase tracking-wider mb-3">
+                        Diferencas encontradas
+                      </h3>
+                      <div className="space-y-2">
+                        {resultado.diferencas.map((d, i) => (
+                          <div key={i} className="flex items-center gap-3 text-sm">
+                            <span className="rounded-md bg-red-500/10 border border-red-500/20 px-2 py-0.5 text-red-300 line-through">
+                              {d.escrito}
+                            </span>
+                            <span className="text-white/40">→</span>
+                            <span className="rounded-md bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-emerald-300 font-medium">
+                              {d.esperado}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+                    <h3 className="text-xs font-bold text-white/60 uppercase tracking-wider mb-2">Frase correta</h3>
+                    <p className="text-base font-medium text-white">{resultado.fraseCorreta}</p>
+                    <button
+                      type="button"
+                      onClick={() => void falar(resultado.fraseCorreta, langCode)}
+                      className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-300 hover:text-amber-200 transition-colors"
+                    >
+                      Ouvir novamente
+                    </button>
+                  </div>
+
+                  {resultado.dicas && (
+                    <div className="rounded-xl border border-[#1260CC]/20 bg-[#1260CC]/8 p-4">
+                      <p className="text-sm text-[#8cc3ff]">{resultado.dicas}</p>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
