@@ -247,26 +247,27 @@ export default function AulaDetalhePage() {
 
       // Limpeza para PDF: remove markdown/ruidos e normaliza caracteres para fonte padrao
       const limparTextoPdf = (texto: string) => {
-        let out = texto
-          .replace(/\*\*/g, '')
-          .replace(/`/g, '')
-          .replace(/[“”]/g, '"')
-          .replace(/[‘’]/g, "'")
-          .replace(/[–—]/g, '-')
-          .replace(/!'/g, '->')
-          .replace(/\s{2,}/g, ' ')
-          .trim();
+        let out = texto;
 
-        // Junta sequencias artificiais de letras separadas por espaco (ex: "r e c u e r d a m e")
-        out = out.replace(/\b(?:[A-Za-z]\s){2,}[A-Za-z]\b/g, (m) => m.replace(/\s+/g, ''));
-
-        // Helvetica nao suporta acentos: remove diacriticos para evitar caracteres corrompidos
+        // 1) Substituir simbolos Unicode conhecidos ANTES de qualquer outra coisa
         out = out
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .replace(/ß/g, 'ss')
-          .replace(/ñ/g, 'n')
-          .replace(/Ñ/g, 'N');
+          .replace(/\u00f1/g, 'n').replace(/\u00d1/g, 'N')
+          .replace(/\u00df/g, 'ss')
+          .replace(/\u00bf/g, '?').replace(/\u00a1/g, '!')
+          .replace(/\u2192/g, '->').replace(/\u2190/g, '<-')
+          .replace(/\u2022/g, '- ').replace(/\u2026/g, '...')
+          .replace(/[\u201c\u201d\u201e]/g, '"').replace(/[\u2018\u2019\u201a]/g, "'")
+          .replace(/[\u2013\u2014]/g, '-')
+          .replace(/\*\*/g, '').replace(/`/g, '');
+
+        // 2) NFD: decompor acentos e remover marcas combinantes
+        out = out.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+        // 3) Eliminar QUALQUER caractere fora do ASCII imprimivel (espaco a ~)
+        out = out.replace(/[^\x0A\x20-\x7E]/g, '');
+
+        // 4) Limpar espacos residuais criados pelas remocoes
+        out = out.replace(/ {2,}/g, ' ').trim();
 
         return out;
       };
