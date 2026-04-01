@@ -70,6 +70,7 @@ function falar(texto: string, lang: string, rate = 0.85, onDone?: () => void) {
   const candidatas = voices.filter((voice) => voice.lang.toLowerCase().startsWith(langPrefix));
 
   const preferida =
+    candidatas.find((voice) => /dalia/i.test(voice.name)) ??
     candidatas.find((voice) => /google|microsoft|natural|neural/i.test(voice.name)) ??
     candidatas[0];
 

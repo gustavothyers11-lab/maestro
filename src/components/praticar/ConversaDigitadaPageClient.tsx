@@ -136,6 +136,7 @@ function selecionarVozes(lang: string): VozesDialogo {
   const ordenadas = [...candidatas].sort((a, b) => {
     const score = (v: SpeechSynthesisVoice) => {
       const n = v.name.toLowerCase();
+      if (/dalia/.test(n)) return 5;
       if (/neural|natural|premium/.test(n)) return 3;
       if (/microsoft|google|apple/.test(n)) return 2;
       return 1;

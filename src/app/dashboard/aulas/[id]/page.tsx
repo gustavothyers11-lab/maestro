@@ -378,7 +378,11 @@ export default function AulaDetalhePage() {
 
     const voices = window.speechSynthesis.getVoices();
     const langPrefix = langCode.split('-')[0];
-    const matchedVoice = voices.find((voice) => voice.lang.toLowerCase().startsWith(langPrefix));
+    const candidatas = voices.filter((voice) => voice.lang.toLowerCase().startsWith(langPrefix));
+    const matchedVoice =
+      candidatas.find((v) => /dalia/i.test(v.name)) ??
+      candidatas.find((v) => /neural|natural|microsoft|google/i.test(v.name)) ??
+      candidatas[0];
     if (matchedVoice) utterance.voice = matchedVoice;
 
     window.speechSynthesis.cancel();
