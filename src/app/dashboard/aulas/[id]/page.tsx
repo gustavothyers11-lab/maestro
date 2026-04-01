@@ -286,90 +286,137 @@ export default function AulaDetalhePage() {
         }
       };
 
-      const coresSecao = (tituloSecao: string) => {
+      const secaoEhTabela = (tituloSecao: string) => {
         const t = limparTextoPdf(tituloSecao).toLowerCase();
-        if (t.includes('resumo')) return { fill: [21, 101, 192] as const, text: [255, 255, 255] as const };
-        if (t.includes('conceito')) return { fill: [0, 121, 107] as const, text: [255, 255, 255] as const };
-        if (t.includes('vocabulario')) return { fill: [2, 119, 189] as const, text: [255, 255, 255] as const };
-        if (t.includes('exemplo')) return { fill: [124, 77, 255] as const, text: [255, 255, 255] as const };
-        if (t.includes('regra') || t.includes('dica')) return { fill: [239, 108, 0] as const, text: [255, 255, 255] as const };
-        if (t.includes('exercicio')) return { fill: [46, 125, 50] as const, text: [255, 255, 255] as const };
-        return { fill: [63, 81, 181] as const, text: [255, 255, 255] as const };
+        return t.includes('vocabulario') || t.includes('exemplo') || t.includes('exercicio');
       };
 
-      // Título principal
-      doc.setFontSize(20);
+      // Header principal (estilo apostila)
+      doc.setFillColor(98, 57, 184);
+      doc.rect(marginLeft, y - 10, maxWidth, 16, 'F');
+      doc.setFillColor(245, 245, 255);
+      doc.rect(marginLeft + 8, y - 6, 5, 5, 'F');
+      doc.rect(marginLeft + 14, y - 6, 5, 5, 'F');
+      doc.setDrawColor(38, 24, 80);
+      doc.setLineWidth(0.5);
+      doc.line(marginLeft + 22, y - 8, marginLeft + 22, y + 3.5);
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(18);
       doc.setFont('helvetica', 'bold');
-      const tituloLinhas = doc.splitTextToSize(limparTextoPdf(conteudo.titulo || aula.titulo), maxWidth);
-      checkNewPage(tituloLinhas.length * 8 + 18);
-      doc.text(tituloLinhas, marginLeft, y);
-      y += tituloLinhas.length * 8 + 2;
-
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(105, 105, 105);
-      doc.text(`Material de revisao gerado automaticamente em ${new Date().toLocaleDateString('pt-BR')}`, marginLeft, y);
+      const tituloTopo = doc.splitTextToSize(limparTextoPdf(conteudo.titulo || aula.titulo), maxWidth - 28);
+      doc.text(tituloTopo.slice(0, 2), marginLeft + 24, y - 1.5);
       doc.setTextColor(0, 0, 0);
-      y += 7;
+      y += 12;
 
-      // Linha decorativa
-      doc.setDrawColor(0, 180, 216);
-      doc.setLineWidth(0.8);
-      doc.line(marginLeft, y, pageWidth - marginRight, y);
-      y += 9;
+      doc.setFillColor(146, 111, 218);
+      doc.rect(marginLeft, y - 7, maxWidth, 9, 'F');
+      doc.setTextColor(234, 225, 255);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Material de revisao - ${new Date().toLocaleDateString('pt-BR')}`, marginLeft + 4, y - 1);
+      doc.setTextColor(0, 0, 0);
+      y += 10;
 
-      // Seções
-      for (const secao of conteudo.secoes) {
-        const paleta = coresSecao(secao.titulo);
+      // Seções numeradas com corpo limpo
+      for (const [indiceSecao, secao] of conteudo.secoes.entries()) {
         checkNewPage(18);
 
-        doc.setFillColor(paleta.fill[0], paleta.fill[1], paleta.fill[2]);
-        doc.roundedRect(marginLeft, y - 5, maxWidth, 8, 1.5, 1.5, 'F');
-        doc.setFontSize(12);
+        doc.setFillColor(103, 58, 183);
+        doc.roundedRect(marginLeft, y - 5, maxWidth, 10, 1.8, 1.8, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(14);
         doc.setFont('helvetica', 'bold');
-        doc.setTextColor(paleta.text[0], paleta.text[1], paleta.text[2]);
-        doc.text(limparTextoPdf(secao.titulo), marginLeft + 3, y);
+        doc.text(`${indiceSecao + 1}. ${limparTextoPdf(secao.titulo)}`, marginLeft + 3, y + 1.5);
         doc.setTextColor(0, 0, 0);
-        y += 8;
+        y += 9;
 
-        doc.setDrawColor(paleta.fill[0], paleta.fill[1], paleta.fill[2]);
-        doc.setLineWidth(0.5);
-        doc.line(marginLeft, y - 1, marginLeft, y + 4);
+        const paragrafos = secao.conteudo.split('\n').map((ln) => limparTextoPdf(ln.trim())).filter(Boolean);
 
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'normal');
+        if (secaoEhTabela(secao.titulo)) {
+          // Bloco em duas colunas para linhas com "->"
+          for (const linha of paragrafos) {
+            const isDica = /^dica\s*:/i.test(linha) || /^erro comum\s*:/i.test(linha);
+            if (isDica) {
+              const dicaLinhas = doc.splitTextToSize(linha.replace(/^erro comum\s*:/i, 'Dica:').replace(/^dica\s*:/i, 'Dica:'), maxWidth - 8);
+              const h = dicaLinhas.length * 5 + 4;
+              checkNewPage(h + 2);
+              doc.setFillColor(255, 248, 225);
+              doc.roundedRect(marginLeft + 1, y - 3, maxWidth - 2, h, 1, 1, 'F');
+              doc.setTextColor(143, 86, 0);
+              doc.setFont('helvetica', 'bold');
+              doc.text(dicaLinhas, marginLeft + 4, y + 1);
+              doc.setTextColor(0, 0, 0);
+              doc.setFont('helvetica', 'normal');
+              y += h + 2;
+              continue;
+            }
 
-        const paragrafos = secao.conteudo.split('\n').map((ln) => ln.trim()).filter(Boolean);
-        for (const paragrafo of paragrafos) {
-          const textoNormalizado = limparTextoPdf(paragrafo);
-          const isLista = /^[-*•]\s+/.test(textoNormalizado) || /^\d+[.)]\s+/.test(textoNormalizado);
-          const isDica = /^dica\s*:/i.test(textoNormalizado) || /^erro comum\s*:/i.test(textoNormalizado);
+            const partes = linha.split('->').map((p) => p.trim()).filter(Boolean);
+            const esquerda = partes[0] ?? linha;
+            const direita = partes[1] ?? '';
+            const colGap = 3;
+            const colW = (maxWidth - colGap) / 2;
+            const leftLines = doc.splitTextToSize(esquerda, colW - 2);
+            const rightLines = doc.splitTextToSize(direita, colW - 2);
+            const rowH = Math.max(leftLines.length, rightLines.length) * 5 + 3;
 
-          if (isDica) {
-            const textoDica = textoNormalizado.replace(/^dica\s*:/i, 'Dica:').replace(/^erro comum\s*:/i, 'Erro comum:');
-            const linhasDica = doc.splitTextToSize(textoDica, maxWidth - 8);
-            const alturaBox = linhasDica.length * 5 + 4;
-            checkNewPage(alturaBox + 3);
-            doc.setFillColor(255, 243, 224);
-            doc.roundedRect(marginLeft + 2, y - 3, maxWidth - 2, alturaBox, 1, 1, 'F');
-            doc.setFont('helvetica', 'bold');
-            doc.setTextColor(191, 54, 12);
-            doc.text(linhasDica, marginLeft + 5, y + 1);
+            checkNewPage(rowH + 1);
+
+            doc.setFillColor(246, 244, 253);
+            doc.rect(marginLeft, y - 3, maxWidth, rowH, 'F');
+            doc.setDrawColor(220, 214, 242);
+            doc.setLineWidth(0.2);
+            doc.rect(marginLeft, y - 3, maxWidth, rowH);
+            doc.line(marginLeft + colW, y - 3, marginLeft + colW, y - 3 + rowH);
+
+            doc.setFontSize(11);
             doc.setFont('helvetica', 'normal');
-            doc.setTextColor(0, 0, 0);
-            y += alturaBox + 2;
-            continue;
-          }
+            doc.text(leftLines, marginLeft + 2, y + 1);
+            if (direita) {
+              doc.setFont('helvetica', 'bold');
+              doc.text(rightLines, marginLeft + colW + 2, y + 1);
+              doc.setFont('helvetica', 'normal');
+            }
 
-          const textoLinha = isLista ? textoNormalizado.replace(/^[-*•]\s+/, '• ').replace(/^(\d+)[.)]\s+/, '$1. ') : textoNormalizado;
-          const recuo = isLista ? 3 : 0;
-          const linhas = doc.splitTextToSize(textoLinha, maxWidth - recuo);
-          checkNewPage(linhas.length * 5 + 3);
-          doc.text(linhas, marginLeft + recuo, y);
-          y += linhas.length * 5 + 1.8;
+            y += rowH + 1;
+          }
+        } else {
+          // Texto corrido com blocos leves e bullets
+          for (const paragrafo of paragrafos) {
+            const isLista = /^[-*]\s+/.test(paragrafo) || /^\d+[.)]\s+/.test(paragrafo);
+            const isDica = /^dica\s*:/i.test(paragrafo) || /^erro comum\s*:/i.test(paragrafo);
+
+            if (isDica) {
+              const textoDica = paragrafo.replace(/^erro comum\s*:/i, 'Dica:').replace(/^dica\s*:/i, 'Dica:');
+              const linhasDica = doc.splitTextToSize(textoDica, maxWidth - 8);
+              const h = linhasDica.length * 5 + 4;
+              checkNewPage(h + 2);
+              doc.setFillColor(255, 248, 225);
+              doc.roundedRect(marginLeft + 1, y - 3, maxWidth - 2, h, 1, 1, 'F');
+              doc.setTextColor(143, 86, 0);
+              doc.setFont('helvetica', 'bold');
+              doc.text(linhasDica, marginLeft + 4, y + 1);
+              doc.setTextColor(0, 0, 0);
+              doc.setFont('helvetica', 'normal');
+              y += h + 2;
+              continue;
+            }
+
+            const texto = isLista
+              ? paragrafo.replace(/^[-*]\s+/, '- ').replace(/^(\d+)[.)]\s+/, '$1. ')
+              : paragrafo;
+            const recuo = isLista ? 2 : 0;
+            const linhas = doc.splitTextToSize(texto, maxWidth - recuo - 1);
+            checkNewPage(linhas.length * 5 + 2);
+            doc.setFontSize(11);
+            doc.setFont('helvetica', 'normal');
+            doc.text(linhas, marginLeft + recuo, y);
+            y += linhas.length * 5 + 1.4;
+          }
         }
 
-        y += 6;
+        y += 5;
       }
 
       // Rodapé
