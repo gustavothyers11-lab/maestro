@@ -36,50 +36,136 @@ interface VozesDialogo {
   B: SpeechSynthesisVoice | null;
 }
 
-const DIALOGOS: Record<string, Dialogo> = {
-  es: {
-    titulo: 'Conversa no cafe',
-    tema: 'pedido e rotina',
-    turnos: [
-      { speaker: 'A', texto: 'Hola, buenos dias. Que vas a pedir?', traducao: 'Oi, bom dia. O que voce vai pedir?' },
-      { speaker: 'B', texto: 'Voy a pedir un cafe con leche y una tostada.', traducao: 'Vou pedir um cafe com leite e uma torrada.' },
-      { speaker: 'A', texto: 'Perfecto, yo quiero un te y un bocadillo.', traducao: 'Perfeito, eu quero um cha e um sanduiche.' },
-      { speaker: 'B', texto: 'La camarera llega en un minuto.', traducao: 'A atendente chega em um minuto.' },
-      { speaker: 'A', texto: 'Despues vamos a la oficina juntos?', traducao: 'Depois vamos ao escritorio juntos?' },
-      { speaker: 'B', texto: 'Si, pero primero tengo que enviar un mensaje.', traducao: 'Sim, mas primeiro eu preciso enviar uma mensagem.' },
-      { speaker: 'A', texto: 'Sin problema, te espero aqui.', traducao: 'Sem problema, eu te espero aqui.' },
-      { speaker: 'B', texto: 'Gracias, hoy tenemos una reunion importante.', traducao: 'Obrigado, hoje temos uma reuniao importante.' },
-    ],
-  },
-  en: {
-    titulo: 'Conversation at the station',
-    tema: 'transport and time',
-    turnos: [
-      { speaker: 'A', texto: 'Hi, what time does the next train leave?', traducao: 'Oi, que horas sai o proximo trem?' },
-      { speaker: 'B', texto: 'It leaves in fifteen minutes from platform three.', traducao: 'Ele sai em quinze minutos da plataforma tres.' },
-      { speaker: 'A', texto: 'Great, do we have time to buy a snack?', traducao: 'Otimo, temos tempo para comprar um lanche?' },
-      { speaker: 'B', texto: 'Yes, there is a small cafe near the entrance.', traducao: 'Sim, ha um pequeno cafe perto da entrada.' },
-      { speaker: 'A', texto: 'Can you watch my backpack for a moment?', traducao: 'Voce pode olhar minha mochila por um momento?' },
-      { speaker: 'B', texto: 'Sure, and do not forget your ticket.', traducao: 'Claro, e nao esqueca seu bilhete.' },
-    ],
-  },
-  fr: {
-    titulo: 'Conversation a la bibliotheque',
-    tema: 'etudes',
-    turnos: [
-      { speaker: 'A', texto: 'Salut, tu etudies ici tous les jours?', traducao: 'Oi, voce estuda aqui todos os dias?' },
-      { speaker: 'B', texto: 'Presque tous les jours, surtout le matin.', traducao: 'Quase todos os dias, principalmente de manha.' },
-      { speaker: 'A', texto: 'Je cherche un livre de grammaire.', traducao: 'Eu procuro um livro de gramatica.' },
-      { speaker: 'B', texto: 'Il est dans la section langue au deuxieme etage.', traducao: 'Ele esta na secao de idiomas no segundo andar.' },
-      { speaker: 'A', texto: 'Merci, tu peux me montrer le chemin?', traducao: 'Obrigado, voce pode me mostrar o caminho?' },
-      { speaker: 'B', texto: 'Bien sur, viens avec moi.', traducao: 'Claro, venha comigo.' },
-    ],
-  },
+const DIALOGOS: Record<string, Dialogo[]> = {
+  es: [
+    {
+      titulo: 'Conversa no cafe',
+      tema: 'pedido e rotina',
+      turnos: [
+        { speaker: 'A', texto: 'Hola, buenos dias. Que vas a pedir?', traducao: 'Oi, bom dia. O que voce vai pedir?' },
+        { speaker: 'B', texto: 'Voy a pedir un cafe con leche y una tostada.', traducao: 'Vou pedir um cafe com leite e uma torrada.' },
+        { speaker: 'A', texto: 'Perfecto, yo quiero un te y un bocadillo.', traducao: 'Perfeito, eu quero um cha e um sanduiche.' },
+        { speaker: 'B', texto: 'La camarera llega en un minuto.', traducao: 'A atendente chega em um minuto.' },
+        { speaker: 'A', texto: 'Despues vamos a la oficina juntos?', traducao: 'Depois vamos ao escritorio juntos?' },
+        { speaker: 'B', texto: 'Si, pero primero tengo que enviar un mensaje.', traducao: 'Sim, mas primeiro eu preciso enviar uma mensagem.' },
+        { speaker: 'A', texto: 'Sin problema, te espero aqui.', traducao: 'Sem problema, eu te espero aqui.' },
+        { speaker: 'B', texto: 'Gracias, hoy tenemos una reunion importante.', traducao: 'Obrigado, hoje temos uma reuniao importante.' },
+      ],
+    },
+    {
+      titulo: 'No mercado',
+      tema: 'compras e precos',
+      turnos: [
+        { speaker: 'A', texto: 'Disculpe, cuanto cuestan estas manzanas?', traducao: 'Com licenca, quanto custam essas macas?' },
+        { speaker: 'B', texto: 'Estan a dos euros el kilo.', traducao: 'Estao a dois euros o quilo.' },
+        { speaker: 'A', texto: 'Pongame un kilo y medio, por favor.', traducao: 'Me de um quilo e meio, por favor.' },
+        { speaker: 'B', texto: 'Algo mas? Tenemos fresas muy frescas hoy.', traducao: 'Mais alguma coisa? Temos morangos bem frescos hoje.' },
+        { speaker: 'A', texto: 'Si, una caja de fresas tambien.', traducao: 'Sim, uma caixa de morangos tambem.' },
+        { speaker: 'B', texto: 'Son cinco euros en total.', traducao: 'Sao cinco euros no total.' },
+        { speaker: 'A', texto: 'Aqui tiene, gracias.', traducao: 'Aqui esta, obrigado.' },
+        { speaker: 'B', texto: 'A usted, que tenga un buen dia.', traducao: 'Igualmente, tenha um bom dia.' },
+      ],
+    },
+    {
+      titulo: 'Na farmacia',
+      tema: 'saude e medicamentos',
+      turnos: [
+        { speaker: 'A', texto: 'Buenos dias, me puede ayudar?', traducao: 'Bom dia, pode me ajudar?' },
+        { speaker: 'B', texto: 'Por supuesto, que necesita?', traducao: 'Claro, o que voce precisa?' },
+        { speaker: 'A', texto: 'Tengo dolor de cabeza desde ayer.', traducao: 'Estou com dor de cabeca desde ontem.' },
+        { speaker: 'B', texto: 'Le recomiendo este analgesico, es muy efectivo.', traducao: 'Recomendo esse analgesico, e muito eficaz.' },
+        { speaker: 'A', texto: 'Cuantas pastillas debo tomar al dia?', traducao: 'Quantos comprimidos devo tomar por dia?' },
+        { speaker: 'B', texto: 'Una cada ocho horas, despues de comer.', traducao: 'Um a cada oito horas, depois de comer.' },
+        { speaker: 'A', texto: 'Muchas gracias, lo voy a llevar.', traducao: 'Muito obrigado, vou levar.' },
+      ],
+    },
+  ],
+  en: [
+    {
+      titulo: 'Conversation at the station',
+      tema: 'transport and time',
+      turnos: [
+        { speaker: 'A', texto: 'Hi, what time does the next train leave?', traducao: 'Oi, que horas sai o proximo trem?' },
+        { speaker: 'B', texto: 'It leaves in fifteen minutes from platform three.', traducao: 'Ele sai em quinze minutos da plataforma tres.' },
+        { speaker: 'A', texto: 'Great, do we have time to buy a snack?', traducao: 'Otimo, temos tempo para comprar um lanche?' },
+        { speaker: 'B', texto: 'Yes, there is a small cafe near the entrance.', traducao: 'Sim, ha um pequeno cafe perto da entrada.' },
+        { speaker: 'A', texto: 'Can you watch my backpack for a moment?', traducao: 'Voce pode olhar minha mochila por um momento?' },
+        { speaker: 'B', texto: 'Sure, and do not forget your ticket.', traducao: 'Claro, e nao esqueca seu bilhete.' },
+      ],
+    },
+    {
+      titulo: 'At the restaurant',
+      tema: 'food and ordering',
+      turnos: [
+        { speaker: 'A', texto: 'Good evening, do you have a table for two?', traducao: 'Boa noite, voces tem mesa para dois?' },
+        { speaker: 'B', texto: 'Yes, please follow me to your table.', traducao: 'Sim, por favor me siga ate sua mesa.' },
+        { speaker: 'A', texto: 'Thank you. Can we see the menu?', traducao: 'Obrigado. Podemos ver o cardapio?' },
+        { speaker: 'B', texto: 'Of course, here you are. The special today is grilled salmon.', traducao: 'Claro, aqui esta. O especial hoje e salmao grelhado.' },
+        { speaker: 'A', texto: 'That sounds great. I will have that, please.', traducao: 'Parece otimo. Vou querer isso, por favor.' },
+        { speaker: 'B', texto: 'Excellent choice. And what would you like to drink?', traducao: 'Excelente escolha. E o que voce gostaria de beber?' },
+        { speaker: 'A', texto: 'Just water for now, thank you.', traducao: 'So agua por enquanto, obrigado.' },
+      ],
+    },
+    {
+      titulo: 'At the office',
+      tema: 'work and meetings',
+      turnos: [
+        { speaker: 'A', texto: 'Did you finish the report for the meeting?', traducao: 'Voce terminou o relatorio para a reuniao?' },
+        { speaker: 'B', texto: 'Almost, I just need to check the numbers again.', traducao: 'Quase, so preciso verificar os numeros de novo.' },
+        { speaker: 'A', texto: 'The meeting starts in thirty minutes.', traducao: 'A reuniao comeca em trinta minutos.' },
+        { speaker: 'B', texto: 'I know, I will be ready. Can you send me the presentation?', traducao: 'Eu sei, estarei pronto. Voce pode me enviar a apresentacao?' },
+        { speaker: 'A', texto: 'Sure, I will do that right now.', traducao: 'Claro, vou fazer isso agora mesmo.' },
+        { speaker: 'B', texto: 'Thanks. See you in the conference room.', traducao: 'Obrigado. Te vejo na sala de conferencias.' },
+      ],
+    },
+  ],
+  fr: [
+    {
+      titulo: 'Conversation a la bibliotheque',
+      tema: 'etudes',
+      turnos: [
+        { speaker: 'A', texto: 'Salut, tu etudies ici tous les jours?', traducao: 'Oi, voce estuda aqui todos os dias?' },
+        { speaker: 'B', texto: 'Presque tous les jours, surtout le matin.', traducao: 'Quase todos os dias, principalmente de manha.' },
+        { speaker: 'A', texto: 'Je cherche un livre de grammaire.', traducao: 'Eu procuro um livro de gramatica.' },
+        { speaker: 'B', texto: 'Il est dans la section langue au deuxieme etage.', traducao: 'Ele esta na secao de idiomas no segundo andar.' },
+        { speaker: 'A', texto: 'Merci, tu peux me montrer le chemin?', traducao: 'Obrigado, voce pode me mostrar o caminho?' },
+        { speaker: 'B', texto: 'Bien sur, viens avec moi.', traducao: 'Claro, venha comigo.' },
+      ],
+    },
+    {
+      titulo: 'Au marche',
+      tema: 'achats et alimentation',
+      turnos: [
+        { speaker: 'A', texto: 'Bonjour, vous avez des tomates fraiches?', traducao: 'Bom dia, voces tem tomates frescos?' },
+        { speaker: 'B', texto: 'Oui, elles viennent d arriver ce matin.', traducao: 'Sim, elas acabaram de chegar esta manha.' },
+        { speaker: 'A', texto: 'Parfait, je vais en prendre un kilo.', traducao: 'Perfeito, vou levar um quilo.' },
+        { speaker: 'B', texto: 'Vous voulez aussi des courgettes? Elles sont tres bonnes.', traducao: 'Voce quer tambem abobrinha? Elas estao otimas.' },
+        { speaker: 'A', texto: 'Pourquoi pas, mettez en deux.', traducao: 'Por que nao, coloque duas.' },
+        { speaker: 'B', texto: 'Ce sera trois euros cinquante au total.', traducao: 'Serao tres euros e cinquenta no total.' },
+      ],
+    },
+    {
+      titulo: 'Au cafe',
+      tema: 'detente et amis',
+      turnos: [
+        { speaker: 'A', texto: 'Tu as passe un bon week end?', traducao: 'Voce teve um bom fim de semana?' },
+        { speaker: 'B', texto: 'Oui, je suis alle au cinema samedi soir.', traducao: 'Sim, fui ao cinema no sabado a noite.' },
+        { speaker: 'A', texto: 'Qu est ce que tu as vu?', traducao: 'O que voce assistiu?' },
+        { speaker: 'B', texto: 'Un film d aventure. Il etait vraiment bien.', traducao: 'Um filme de aventura. Foi muito bom.' },
+        { speaker: 'A', texto: 'Je veux le voir aussi. Tu me recommandes?', traducao: 'Eu quero ver tambem. Voce recomenda?' },
+        { speaker: 'B', texto: 'Absolument, tu vas adorer.', traducao: 'Com certeza, voce vai adorar.' },
+      ],
+    },
+  ],
 };
 
-function escolherDialogo(langCode: string): Dialogo {
+function escolherDialogo(langCode: string, evitarTitulo?: string): Dialogo {
   const prefix = langCode.split('-')[0].toLowerCase();
-  return DIALOGOS[prefix] ?? DIALOGOS.es;
+  const lista = DIALOGOS[prefix] ?? DIALOGOS.es;
+  const candidatos = lista.length > 1 && evitarTitulo
+    ? lista.filter((d) => d.titulo !== evitarTitulo)
+    : lista;
+  return candidatos[Math.floor(Math.random() * candidatos.length)];
 }
 
 function normalizarTexto(value: string): string {
@@ -257,6 +343,19 @@ export default function ConversaDigitadaPageClient() {
     setSegundosRestantes(10 * 60);
   }, [langCode]);
 
+  const mudarConversa = useCallback(() => {
+    window.speechSynthesis?.cancel();
+    setDialogo((d) => escolherDialogo(langCode, d.titulo));
+    setIndiceAtual(0);
+    setResposta('');
+    setResultado(null);
+    setTocandoConversa(false);
+    setIndiceFalando(null);
+    setAcertos(0);
+    setTentativas(0);
+    setSegundosRestantes(10 * 60);
+  }, [langCode]);
+
   const ouvirConversa = useCallback(async () => {
     if (tocandoConversa || finalizado) return;
     setTocandoConversa(true);
@@ -344,9 +443,20 @@ export default function ConversaDigitadaPageClient() {
         <section className="rounded-2xl border border-white/10 bg-[#17172b]/85 p-5 sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
             <h2 className="text-lg font-bold">{dialogo.titulo}</h2>
-            <span className="rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/75">
-              Tema: {dialogo.tema}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/75">
+                Tema: {dialogo.tema}
+              </span>
+              <button
+                type="button"
+                onClick={mudarConversa}
+                disabled={tocandoConversa}
+                title="Trocar por um novo roteiro"
+                className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-3 py-1 text-[11px] font-semibold text-indigo-200 hover:bg-indigo-500/20 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                🔀 Mudar conversa
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-3 gap-3 mb-5">
