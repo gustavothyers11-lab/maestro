@@ -319,6 +319,126 @@ function ModalEditar({ card, aberto, onFechar, onSalvar, salvando }: ModalEditar
   );
 }
 
+interface ModalNovoCardProps {
+  aberto: boolean;
+  onFechar: () => void;
+  onCriar: (dados: { frente: string; verso: string; genero: Genero; notas: string }) => Promise<void>;
+  salvando: boolean;
+  erro?: string | null;
+}
+
+function ModalNovoCard({ aberto, onFechar, onCriar, salvando, erro }: ModalNovoCardProps) {
+  const [frente, setFrente] = useState('');
+  const [verso, setVerso] = useState('');
+  const [genero, setGenero] = useState<Genero>('neutro');
+  const [notas, setNotas] = useState('');
+
+  useEffect(() => {
+    if (!aberto) return;
+    setFrente('');
+    setVerso('');
+    setGenero('neutro');
+    setNotas('');
+  }, [aberto]);
+
+  const handleCriar = async () => {
+    if (frente.trim().length === 0 || verso.trim().length === 0) return;
+    await onCriar({ frente: frente.trim(), verso: verso.trim(), genero, notas: notas.trim() });
+  };
+
+  return (
+    <Modal aberto={aberto} onFechar={onFechar} titulo="Novo Card">
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+            Frente (idioma de estudo)
+          </label>
+          <input
+            type="text"
+            value={frente}
+            onChange={(e) => setFrente(e.target.value)}
+            className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-white/[0.04] text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-[#1260CC]/40 transition-shadow"
+            placeholder="Palavra ou frase..."
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+            Verso (português)
+          </label>
+          <input
+            type="text"
+            value={verso}
+            onChange={(e) => setVerso(e.target.value)}
+            className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-white/[0.04] text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-[#1260CC]/40 transition-shadow"
+            placeholder="Tradução em português..."
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+            Gênero
+          </label>
+          <div className="flex gap-2">
+            {(['masculino', 'feminino', 'neutro'] as Genero[]).map((g) => (
+              <button
+                key={g}
+                onClick={() => setGenero(g)}
+                className={`flex-1 px-3 py-2 rounded-xl text-xs font-medium border transition-all duration-150 ${
+                  genero === g
+                    ? g === 'masculino'
+                      ? 'bg-blue-500/10 border-blue-500/30 text-blue-500 dark:bg-blue-400/15 dark:border-blue-400/30 dark:text-blue-400'
+                      : g === 'feminino'
+                      ? 'bg-pink-500/10 border-pink-500/30 text-pink-500 dark:bg-pink-400/15 dark:border-pink-400/30 dark:text-pink-400'
+                      : 'bg-gray-200/60 border-gray-300/60 text-gray-600 dark:bg-white/[0.08] dark:border-white/[0.12] dark:text-gray-300'
+                    : 'bg-transparent border-gray-200 dark:border-white/[0.06] text-gray-400 hover:border-gray-300 dark:hover:border-white/[0.12]'
+                }`}
+              >
+                {GENERO_CONFIG[g].label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+            Notas (opcional)
+          </label>
+          <textarea
+            value={notas}
+            onChange={(e) => setNotas(e.target.value)}
+            rows={2}
+            className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-white/[0.04] text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-[#1260CC]/40 transition-shadow resize-none"
+            placeholder="Exemplo de uso ou dica..."
+          />
+        </div>
+
+        {erro && (
+          <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-400">
+            {erro}
+          </div>
+        )}
+
+        <div className="flex gap-3 pt-2">
+          <button
+            onClick={onFechar}
+            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/[0.08] text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/[0.04] transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleCriar}
+            disabled={salvando || frente.trim().length === 0 || verso.trim().length === 0}
+            className="flex-1 px-4 py-2.5 rounded-xl bg-[#1260CC] text-white text-sm font-semibold shadow-lg shadow-[#1260CC]/25 hover:shadow-xl hover:shadow-[#1260CC]/30 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+          >
+            {salvando ? 'Criando…' : 'Criar card'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Modal Confirmar Exclusão
 // ---------------------------------------------------------------------------
@@ -375,7 +495,7 @@ export default function BaralhoDetalhePage() {
   const [loadingBaralho, setLoadingBaralho] = useState(true);
 
   // Cards via hook (filtra por baralho)
-  const { cards, loading: loadingCards, estatisticas, deletarCard, recarregar } = useCards({ baralhoId });
+  const { cards, loading: loadingCards, estatisticas, deletarCard, salvarCards, recarregar } = useCards({ baralhoId });
 
   // Busca local
   const [busca, setBusca] = useState('');
@@ -384,6 +504,9 @@ export default function BaralhoDetalhePage() {
   // Modais
   const [cardEditando, setCardEditando] = useState<Card | null>(null);
   const [cardDeletando, setCardDeletando] = useState<Card | null>(null);
+  const [novoCardAberto, setNovoCardAberto] = useState(false);
+  const [salvandoNovoCard, setSalvandoNovoCard] = useState(false);
+  const [erroNovoCard, setErroNovoCard] = useState<string | null>(null);
   const [salvandoEdit, setSalvandoEdit] = useState(false);
   const [deletandoCard, setDeletandoCard] = useState(false);
 
@@ -451,6 +574,30 @@ export default function BaralhoDetalhePage() {
     }
   }, [deletarCard]);
 
+  const handleCriarCard = useCallback(async (dados: { frente: string; verso: string; genero: Genero; notas: string }) => {
+    setSalvandoNovoCard(true);
+    setErroNovoCard(null);
+    try {
+      await salvarCards([
+        {
+          frente: dados.frente,
+          verso: dados.verso,
+          genero: dados.genero,
+          notas: dados.notas || null,
+          audioUrl: null,
+          baralhoId,
+          aulaId: null,
+        },
+      ]);
+      setNovoCardAberto(false);
+      await recarregar();
+    } catch (e) {
+      setErroNovoCard(e instanceof Error ? e.message : 'Erro ao criar card.');
+    } finally {
+      setSalvandoNovoCard(false);
+    }
+  }, [baralhoId, recarregar, salvarCards]);
+
   // ── Loading state ────────────────────────────────────────────────────
   const isLoading = loadingBaralho || loadingCards;
 
@@ -512,21 +659,35 @@ export default function BaralhoDetalhePage() {
                 </div>
               </div>
 
-              {/* Botão estudar */}
-              <button
-                onClick={() => router.push(`/dashboard/estudar?baralho=${baralhoId}`)}
-                className="bdStudy-btn inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-semibold shadow-lg hover:shadow-xl hover:scale-[1.03] active:scale-[0.98] transition-all duration-200"
-                style={{
-                  background: `linear-gradient(135deg, ${cor}, ${cor}dd)`,
-                  boxShadow: `0 8px 24px ${cor}40`,
-                }}
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Estudar este baralho
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setErroNovoCard(null);
+                    setNovoCardAberto(true);
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/[0.10] bg-white dark:bg-white/[0.06] text-gray-700 dark:text-gray-200 text-sm font-semibold hover:bg-gray-50 dark:hover:bg-white/[0.10] transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Novo card
+                </button>
+
+                <button
+                  onClick={() => router.push(`/dashboard/estudar?baralho=${baralhoId}`)}
+                  className="bdStudy-btn inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-semibold shadow-lg hover:shadow-xl hover:scale-[1.03] active:scale-[0.98] transition-all duration-200"
+                  style={{
+                    background: `linear-gradient(135deg, ${cor}, ${cor}dd)`,
+                    boxShadow: `0 8px 24px ${cor}40`,
+                  }}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Estudar este baralho
+                </button>
+              </div>
             </div>
           ) : (
             <div className="text-center py-12">
@@ -640,6 +801,17 @@ export default function BaralhoDetalhePage() {
         onFechar={() => setCardEditando(null)}
         onSalvar={handleEditar}
         salvando={salvandoEdit}
+      />
+      <ModalNovoCard
+        aberto={novoCardAberto}
+        onFechar={() => {
+          if (salvandoNovoCard) return;
+          setNovoCardAberto(false);
+          setErroNovoCard(null);
+        }}
+        onCriar={handleCriarCard}
+        salvando={salvandoNovoCard}
+        erro={erroNovoCard}
       />
       <ModalDeletar
         card={cardDeletando}
