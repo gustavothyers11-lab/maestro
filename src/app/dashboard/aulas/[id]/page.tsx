@@ -245,8 +245,31 @@ export default function AulaDetalhePage() {
       const { default: jsPDF } = await import('jspdf');
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-      // Helvetica nao suporta acentos — normaliza sem perder legibilidade
-      const p = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss').replace(/ñ/g, 'n').replace(/Ñ/g, 'N');
+      // Limpeza para PDF: remove markdown/ruidos e normaliza caracteres para fonte padrao
+      const limparTextoPdf = (texto: string) => {
+        let out = texto
+          .replace(/\*\*/g, '')
+          .replace(/`/g, '')
+          .replace(/[“”]/g, '"')
+          .replace(/[‘’]/g, "'")
+          .replace(/[–—]/g, '-')
+          .replace(/!'/g, '->')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+
+        // Junta sequencias artificiais de letras separadas por espaco (ex: "r e c u e r d a m e")
+        out = out.replace(/\b(?:[A-Za-z]\s){2,}[A-Za-z]\b/g, (m) => m.replace(/\s+/g, ''));
+
+        // Helvetica nao suporta acentos: remove diacriticos para evitar caracteres corrompidos
+        out = out
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/ß/g, 'ss')
+          .replace(/ñ/g, 'n')
+          .replace(/Ñ/g, 'N');
+
+        return out;
+      };
 
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
@@ -263,7 +286,7 @@ export default function AulaDetalhePage() {
       };
 
       const coresSecao = (tituloSecao: string) => {
-        const t = p(tituloSecao).toLowerCase();
+        const t = limparTextoPdf(tituloSecao).toLowerCase();
         if (t.includes('resumo')) return { fill: [21, 101, 192] as const, text: [255, 255, 255] as const };
         if (t.includes('conceito')) return { fill: [0, 121, 107] as const, text: [255, 255, 255] as const };
         if (t.includes('vocabulario')) return { fill: [2, 119, 189] as const, text: [255, 255, 255] as const };
@@ -276,7 +299,7 @@ export default function AulaDetalhePage() {
       // Título principal
       doc.setFontSize(20);
       doc.setFont('helvetica', 'bold');
-      const tituloLinhas = doc.splitTextToSize(p(conteudo.titulo || aula.titulo), maxWidth);
+      const tituloLinhas = doc.splitTextToSize(limparTextoPdf(conteudo.titulo || aula.titulo), maxWidth);
       checkNewPage(tituloLinhas.length * 8 + 18);
       doc.text(tituloLinhas, marginLeft, y);
       y += tituloLinhas.length * 8 + 2;
@@ -304,7 +327,7 @@ export default function AulaDetalhePage() {
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(paleta.text[0], paleta.text[1], paleta.text[2]);
-        doc.text(p(secao.titulo), marginLeft + 3, y);
+        doc.text(limparTextoPdf(secao.titulo), marginLeft + 3, y);
         doc.setTextColor(0, 0, 0);
         y += 8;
 
@@ -317,7 +340,7 @@ export default function AulaDetalhePage() {
 
         const paragrafos = secao.conteudo.split('\n').map((ln) => ln.trim()).filter(Boolean);
         for (const paragrafo of paragrafos) {
-          const textoNormalizado = p(paragrafo);
+          const textoNormalizado = limparTextoPdf(paragrafo);
           const isLista = /^[-*•]\s+/.test(textoNormalizado) || /^\d+[.)]\s+/.test(textoNormalizado);
           const isDica = /^dica\s*:/i.test(textoNormalizado) || /^erro comum\s*:/i.test(textoNormalizado);
 
@@ -355,7 +378,7 @@ export default function AulaDetalhePage() {
         doc.setFontSize(8);
         doc.setFont('helvetica', 'italic');
         doc.setTextColor(150, 150, 150);
-        doc.text(`Maestro — ${p(aula.titulo)} — Pagina ${pg}/${totalPages}`, marginLeft, pageHeight - 10);
+        doc.text(`Maestro — ${limparTextoPdf(aula.titulo)} — Pagina ${pg}/${totalPages}`, marginLeft, pageHeight - 10);
         doc.setTextColor(0, 0, 0);
       }
 

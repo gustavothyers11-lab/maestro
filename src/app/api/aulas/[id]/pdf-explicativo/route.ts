@@ -63,6 +63,8 @@ REGRAS DE QUALIDADE E TAMANHO (importante):
 - Em "Exemplos práticos", sempre inclua frase no idioma de estudo + tradução.
 - Em "Regras e dicas", inclua alertas de erro comum começando por "Dica:".
 - Evite repetir a mesma explicação em seções diferentes.
+- NÃO use markdown (sem **negrito**, sem *itálico*, sem backticks).
+- NÃO separe letras com espaços (escreva palavras normalmente).
 
 Retorne APENAS um JSON válido no formato:
 {
