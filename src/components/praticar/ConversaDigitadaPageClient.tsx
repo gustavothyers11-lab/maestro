@@ -273,7 +273,7 @@ function extrairDiferencas(esperado: string, escrito: string): Diferenca[] {
 
 export default function ConversaDigitadaPageClient() {
   const [langCode, setLangCode] = useState('es-ES');
-  const [dialogo, setDialogo] = useState<Dialogo>(DIALOGOS.es);
+  const [dialogo, setDialogo] = useState<Dialogo>(() => escolherDialogo('es-ES'));
   const [indiceAtual, setIndiceAtual] = useState(0);
   const [resposta, setResposta] = useState('');
   const [resultado, setResultado] = useState<ResultadoValidacao | null>(null);
