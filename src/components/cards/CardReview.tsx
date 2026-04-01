@@ -61,7 +61,7 @@ const botoesConfig: BotaoConfig[] = [
   {
     resultado: 'dificil',
     label: 'DIFÍCIL',
-    previewLabel: '3 dias',
+    previewLabel: '2 dias',
     icone: (
       <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
@@ -75,7 +75,7 @@ const botoesConfig: BotaoConfig[] = [
   {
     resultado: 'bom',
     label: 'BOM',
-    previewLabel: '1 semana',
+    previewLabel: '4 dias',
     icone: (
       <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
@@ -89,7 +89,7 @@ const botoesConfig: BotaoConfig[] = [
   {
     resultado: 'facil',
     label: 'FÁCIL',
-    previewLabel: '2 semanas',
+    previewLabel: '1 semana',
     icone: (
       <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
         <path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.27 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z" />

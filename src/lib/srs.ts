@@ -20,11 +20,11 @@ function adicionarDias(dataISO: string, dias: number): string {
 /**
  * Aplica o algoritmo SM-2 adaptado para calcular o próximo estado de revisão.
  *
- * Intervalos por resposta:
+ * Intervalos por resposta (progressão: errei < difícil < bom < fácil):
  *  - ERREI   → 1 dia (reset), facilidade −0.2, repetições = 0
- *  - DIFÍCIL → máx 14 dias, facilidade −0.15
- *  - BOM     → máx 60 dias, facilidade inalterada
- *  - FÁCIL   → máx 90 dias, facilidade +0.1
+ *  - DIFÍCIL → 2d / 3d / ×1.2 (máx 14d), facilidade −0.15
+ *  - BOM     → 4d / 7d / ×ease (máx 60d), facilidade inalterada
+ *  - FÁCIL   → 7d / 14d / ×ease×1.3 (máx 90d), facilidade +0.1
  */
 export function calcularSRS(card: Card, resposta: ResultadoRevisao): ResultadoSRS {
   let novaFacilidade: number;
@@ -41,7 +41,9 @@ export function calcularSRS(card: Card, resposta: ResultadoRevisao): ResultadoSR
     case 'dificil':
       novasRepeticoes = card.repeticoes + 1;
       novaFacilidade = Math.max(FACILIDADE_MINIMA, card.facilidade - 0.15);
-      if (novasRepeticoes < 3) {
+      if (novasRepeticoes === 1) {
+        novoIntervalo = 2;
+      } else if (novasRepeticoes === 2) {
         novoIntervalo = 3;
       } else {
         novoIntervalo = Math.round(card.intervalo * 1.2);
@@ -53,9 +55,9 @@ export function calcularSRS(card: Card, resposta: ResultadoRevisao): ResultadoSR
       novasRepeticoes = card.repeticoes + 1;
       novaFacilidade = card.facilidade;
       if (novasRepeticoes === 1) {
-        novoIntervalo = 1;
-      } else if (novasRepeticoes === 2) {
         novoIntervalo = 4;
+      } else if (novasRepeticoes === 2) {
+        novoIntervalo = 7;
       } else {
         novoIntervalo = Math.round(card.intervalo * novaFacilidade);
       }
@@ -66,9 +68,9 @@ export function calcularSRS(card: Card, resposta: ResultadoRevisao): ResultadoSR
       novasRepeticoes = card.repeticoes + 1;
       novaFacilidade = Math.max(FACILIDADE_MINIMA, card.facilidade + 0.1);
       if (novasRepeticoes === 1) {
-        novoIntervalo = 4;
-      } else if (novasRepeticoes === 2) {
         novoIntervalo = 7;
+      } else if (novasRepeticoes === 2) {
+        novoIntervalo = 14;
       } else {
         novoIntervalo = Math.round(card.intervalo * novaFacilidade * 1.3);
       }
