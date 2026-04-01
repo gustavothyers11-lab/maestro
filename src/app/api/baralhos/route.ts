@@ -157,6 +157,84 @@ export async function POST(request: NextRequest) {
 }
 
 // ---------------------------------------------------------------------------
+// PATCH — renomear/atualizar baralho
+// ---------------------------------------------------------------------------
+
+export async function PATCH(request: NextRequest) {
+  const supabase = await createClient();
+  const { user } = await getAuthUser(supabase);
+
+  if (!user) {
+    return NextResponse.json(
+      { error: 'Não autenticado.' },
+      { status: 401 },
+    );
+  }
+
+  const body = await request.json();
+  const { id, nome, tema, cor } = body as {
+    id?: string;
+    nome?: string;
+    tema?: string;
+    cor?: string;
+  };
+
+  if (!id || typeof id !== 'string') {
+    return NextResponse.json(
+      { error: 'ID do baralho é obrigatório.' },
+      { status: 400 },
+    );
+  }
+
+  const updates: Record<string, unknown> = {};
+
+  if (nome !== undefined) {
+    if (typeof nome !== 'string' || nome.trim().length === 0) {
+      return NextResponse.json({ error: 'Nome não pode ser vazio.' }, { status: 400 });
+    }
+    if (nome.trim().length > 100) {
+      return NextResponse.json({ error: 'Nome deve ter no máximo 100 caracteres.' }, { status: 400 });
+    }
+    updates.nome = nome.trim();
+  }
+
+  if (tema !== undefined) {
+    if (!TEMAS_VALIDOS.includes(tema)) {
+      return NextResponse.json({ error: `Tema inválido. Opções: ${TEMAS_VALIDOS.join(', ')}` }, { status: 400 });
+    }
+    updates.tema = tema;
+  }
+
+  if (cor !== undefined) {
+    if (!COR_REGEX.test(cor)) {
+      return NextResponse.json({ error: 'Cor deve ser um hex válido (#RRGGBB).' }, { status: 400 });
+    }
+    updates.cor = cor;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: 'Nenhum campo para atualizar.' }, { status: 400 });
+  }
+
+  const { data, error } = await supabase
+    .from('baralhos')
+    .update(updates)
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .select()
+    .single();
+
+  if (error) {
+    return NextResponse.json(
+      { error: `Erro ao atualizar baralho: ${error.message}` },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({ baralho: rowToBaralho(data as Record<string, unknown>) });
+}
+
+// ---------------------------------------------------------------------------
 // DELETE — remover baralho
 // ---------------------------------------------------------------------------
 

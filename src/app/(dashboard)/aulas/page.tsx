@@ -663,14 +663,52 @@ export default function AulasPage() {
   }, [transcricao, quantidade, temasSelecionados, irPara]);
 
   /* ── Salvar cards aprovados ──────────────────────────────────────── */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const salvarCards = useCallback(async (_aprovados: CardGerado[]) => {
+  const salvarCards = useCallback(async (aprovados: CardGerado[]) => {
     setSalvando(true);
-    // TODO: integrar com Supabase — por enquanto simula delay
-    await new Promise((r) => setTimeout(r, 800));
-    setSalvando(false);
-    setSalvoOk(true);
-  }, []);
+    setErro('');
+    try {
+      const aulaRes = await fetch('/api/aulas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          titulo,
+          transcricao,
+          resumo,
+          status: 'concluida',
+        }),
+      });
+
+      const aulaData = await aulaRes.json().catch(() => ({}));
+      if (!aulaRes.ok || !aulaData.aula?.id) {
+        throw new Error(aulaData.error || `Erro ${aulaRes.status} ao criar aula.`);
+      }
+
+      const aulaId = aulaData.aula.id as string;
+
+      const res = await fetch('/api/cards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cards: aprovados.map((c) => ({
+            frente: c.frente,
+            verso: c.verso,
+            genero: c.genero,
+            notas: c.exemplo || null,
+            aulaId,
+          })),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Erro ${res.status}`);
+      }
+      setSalvoOk(true);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Erro ao salvar cards.');
+    } finally {
+      setSalvando(false);
+    }
+  }, [titulo, transcricao, resumo]);
 
   /* ── Resetar todo o fluxo ────────────────────────────────────────── */
   const resetar = useCallback(() => {

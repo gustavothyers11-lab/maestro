@@ -314,6 +314,7 @@ export async function PATCH(request: NextRequest) {
     verso?: string;
     genero?: Genero;
     notas?: string;
+    baralhoId?: string;
     proximoRevisao?: string;
     intervalo?: number;
     facilidade?: number;
@@ -328,7 +329,7 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  const { id, frente, verso, genero, notas, proximoRevisao, intervalo, facilidade, repeticoes } = body;
+  const { id, frente, verso, genero, notas, baralhoId, proximoRevisao, intervalo, facilidade, repeticoes } = body;
 
   if (!id || typeof id !== 'string') {
     return NextResponse.json({ error: 'ID do card é obrigatório.' }, { status: 400 });
@@ -339,6 +340,7 @@ export async function PATCH(request: NextRequest) {
   if (verso !== undefined) updates.verso = verso.trim();
   if (genero !== undefined && GENEROS_VALIDOS.includes(genero)) updates.genero = genero;
   if (notas !== undefined) updates.notas = notas.trim() || null;
+  if (baralhoId !== undefined) updates.baralho_id = baralhoId;
   if (proximoRevisao !== undefined) updates.proximo_revisao = proximoRevisao;
   if (intervalo !== undefined) updates.intervalo = intervalo;
   if (facilidade !== undefined) updates.facilidade = facilidade;

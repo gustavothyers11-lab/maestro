@@ -82,9 +82,10 @@ interface CardItemProps {
   index: number;
   onEditar: (c: Card) => void;
   onDeletar: (c: Card) => void;
+  onMover: (c: Card) => void;
 }
 
-function CardItem({ card, index, onEditar, onDeletar }: CardItemProps) {
+function CardItem({ card, index, onEditar, onDeletar, onMover }: CardItemProps) {
   const status = statusCard(card);
   const cfg = STATUS_CONFIG[status];
   const genCfg = GENERO_CONFIG[card.genero];
@@ -140,6 +141,15 @@ function CardItem({ card, index, onEditar, onDeletar }: CardItemProps) {
               <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
             Editar
+          </button>
+          <button
+            onClick={() => onMover(card)}
+            className="inline-flex items-center gap-1 text-[11.5px] font-medium px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-500/10 text-blue-500 hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors"
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+            </svg>
+            Mover
           </button>
           <button
             onClick={() => onDeletar(card)}
@@ -482,6 +492,141 @@ function ModalDeletar({ card, aberto, onFechar, onConfirmar, deletando }: ModalD
 }
 
 // ---------------------------------------------------------------------------
+// Modal Editar Baralho (renomear)
+// ---------------------------------------------------------------------------
+
+interface ModalEditarBaralhoProps {
+  baralho: Baralho | null;
+  aberto: boolean;
+  onFechar: () => void;
+  onSalvar: (nome: string) => Promise<void>;
+  salvando: boolean;
+}
+
+function ModalEditarBaralho({ baralho, aberto, onFechar, onSalvar, salvando }: ModalEditarBaralhoProps) {
+  const [nome, setNome] = useState('');
+
+  useEffect(() => {
+    if (baralho && aberto) setNome(baralho.nome);
+  }, [baralho, aberto]);
+
+  return (
+    <Modal aberto={aberto} onFechar={onFechar} titulo="Editar Baralho">
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+            Nome do baralho
+          </label>
+          <input
+            type="text"
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            maxLength={100}
+            className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-white/[0.04] text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-[#1260CC]/40 transition-shadow"
+            placeholder="Nome do baralho..."
+          />
+        </div>
+        <div className="flex gap-3 pt-2">
+          <button
+            onClick={onFechar}
+            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/[0.08] text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/[0.04] transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => nome.trim() && onSalvar(nome.trim())}
+            disabled={salvando || nome.trim().length === 0}
+            className="flex-1 px-4 py-2.5 rounded-xl bg-[#1260CC] text-white text-sm font-semibold shadow-lg shadow-[#1260CC]/25 hover:shadow-xl hover:shadow-[#1260CC]/30 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+          >
+            {salvando ? 'Salvando…' : 'Salvar'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Modal Mover Card(s) para outro baralho
+// ---------------------------------------------------------------------------
+
+interface ModalMoverCardProps {
+  card: Card | null;
+  aberto: boolean;
+  baralhos: Baralho[];
+  baralhoAtualId: string;
+  onFechar: () => void;
+  onMover: (cardId: string, novoBaralhoId: string) => Promise<void>;
+  movendo: boolean;
+}
+
+function ModalMoverCard({ card, aberto, baralhos, baralhoAtualId, onFechar, onMover, movendo }: ModalMoverCardProps) {
+  const [destino, setDestino] = useState('');
+  const outrosBaralhos = baralhos.filter((b) => b.id !== baralhoAtualId);
+
+  useEffect(() => {
+    if (aberto) setDestino('');
+  }, [aberto]);
+
+  return (
+    <Modal aberto={aberto} onFechar={onFechar} titulo="Mover Card">
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          Mover <strong className="text-gray-900 dark:text-white">&quot;{card?.frente}&quot;</strong> para:
+        </p>
+
+        {outrosBaralhos.length === 0 ? (
+          <p className="text-sm text-gray-400 dark:text-gray-500 italic">
+            Você não tem outros baralhos. Crie um novo baralho primeiro.
+          </p>
+        ) : (
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {outrosBaralhos.map((b) => (
+              <button
+                key={b.id}
+                onClick={() => setDestino(b.id)}
+                className={`w-full text-left px-4 py-3 rounded-xl border text-sm font-medium transition-all duration-150 ${
+                  destino === b.id
+                    ? 'border-[#1260CC]/50 bg-[#1260CC]/10 text-[#1260CC] dark:bg-[#1260CC]/20 dark:text-blue-300'
+                    : 'border-gray-200 dark:border-white/[0.06] text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:hover:border-white/[0.12] hover:bg-gray-50 dark:hover:bg-white/[0.04]'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span
+                    className="w-3 h-3 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: b.cor }}
+                  />
+                  {b.nome}
+                  <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto">
+                    {b.totalCards} cards
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-3 pt-2">
+          <button
+            onClick={onFechar}
+            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/[0.08] text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/[0.04] transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => card && destino && onMover(card.id, destino)}
+            disabled={movendo || !destino}
+            className="flex-1 px-4 py-2.5 rounded-xl bg-[#1260CC] text-white text-sm font-semibold shadow-lg shadow-[#1260CC]/25 hover:shadow-xl hover:shadow-[#1260CC]/30 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+          >
+            {movendo ? 'Movendo…' : 'Mover'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Página principal
 // ---------------------------------------------------------------------------
 
@@ -504,11 +649,16 @@ export default function BaralhoDetalhePage() {
   // Modais
   const [cardEditando, setCardEditando] = useState<Card | null>(null);
   const [cardDeletando, setCardDeletando] = useState<Card | null>(null);
+  const [cardMovendo, setCardMovendo] = useState<Card | null>(null);
   const [novoCardAberto, setNovoCardAberto] = useState(false);
+  const [editarBaralhoAberto, setEditarBaralhoAberto] = useState(false);
   const [salvandoNovoCard, setSalvandoNovoCard] = useState(false);
   const [erroNovoCard, setErroNovoCard] = useState<string | null>(null);
   const [salvandoEdit, setSalvandoEdit] = useState(false);
+  const [salvandoBaralho, setSalvandoBaralho] = useState(false);
+  const [movendoCard, setMovendoCard] = useState(false);
   const [deletandoCard, setDeletandoCard] = useState(false);
+  const [todosBaralhos, setTodosBaralhos] = useState<Baralho[]>([]);
 
   // ── Buscar baralho ───────────────────────────────────────────────────
   useEffect(() => {
@@ -518,7 +668,9 @@ export default function BaralhoDetalhePage() {
     fetch('/api/baralhos')
       .then((r) => r.json())
       .then((data) => {
-        const found = (data.baralhos ?? []).find((b: Baralho) => b.id === baralhoId);
+        const todos = data.baralhos ?? [];
+        setTodosBaralhos(todos);
+        const found = todos.find((b: Baralho) => b.id === baralhoId);
         setBaralho(found ?? null);
       })
       .catch(() => setBaralho(null))
@@ -598,6 +750,43 @@ export default function BaralhoDetalhePage() {
     }
   }, [baralhoId, recarregar, salvarCards]);
 
+  const handleRenomearBaralho = useCallback(async (novoNome: string) => {
+    setSalvandoBaralho(true);
+    try {
+      const res = await fetch('/api/baralhos', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: baralhoId, nome: novoNome }),
+      });
+      if (!res.ok) throw new Error('Falha ao renomear');
+      const data = await res.json();
+      setBaralho(data.baralho);
+      setEditarBaralhoAberto(false);
+    } catch {
+      // silently fail
+    } finally {
+      setSalvandoBaralho(false);
+    }
+  }, [baralhoId]);
+
+  const handleMoverCard = useCallback(async (cardId: string, novoBaralhoId: string) => {
+    setMovendoCard(true);
+    try {
+      const res = await fetch('/api/cards', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: cardId, baralhoId: novoBaralhoId }),
+      });
+      if (!res.ok) throw new Error('Falha ao mover');
+      setCardMovendo(null);
+      await recarregar();
+    } catch {
+      // silently fail
+    } finally {
+      setMovendoCard(false);
+    }
+  }, [recarregar]);
+
   // ── Loading state ────────────────────────────────────────────────────
   const isLoading = loadingBaralho || loadingCards;
 
@@ -660,6 +849,16 @@ export default function BaralhoDetalhePage() {
               </div>
 
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setEditarBaralhoAberto(true)}
+                  className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-gray-200 dark:border-white/[0.10] bg-white dark:bg-white/[0.06] text-gray-700 dark:text-gray-200 text-sm font-semibold hover:bg-gray-50 dark:hover:bg-white/[0.10] transition-colors"
+                  title="Editar baralho"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+
                 <button
                   onClick={() => {
                     setErroNovoCard(null);
@@ -788,6 +987,7 @@ export default function BaralhoDetalhePage() {
                 index={i}
                 onEditar={setCardEditando}
                 onDeletar={setCardDeletando}
+                onMover={setCardMovendo}
               />
             ))}
           </div>
@@ -819,6 +1019,22 @@ export default function BaralhoDetalhePage() {
         onFechar={() => setCardDeletando(null)}
         onConfirmar={handleDeletar}
         deletando={deletandoCard}
+      />
+      <ModalEditarBaralho
+        baralho={baralho}
+        aberto={editarBaralhoAberto}
+        onFechar={() => setEditarBaralhoAberto(false)}
+        onSalvar={handleRenomearBaralho}
+        salvando={salvandoBaralho}
+      />
+      <ModalMoverCard
+        card={cardMovendo}
+        aberto={!!cardMovendo}
+        baralhos={todosBaralhos}
+        baralhoAtualId={baralhoId}
+        onFechar={() => setCardMovendo(null)}
+        onMover={handleMoverCard}
+        movendo={movendoCard}
       />
     </div>
   );
