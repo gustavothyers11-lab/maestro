@@ -58,12 +58,29 @@ function getSpeechRecognitionFactory(): SpeechRecognitionFactory | null {
 // TTS helper
 // ---------------------------------------------------------------------------
 
-function falar(texto: string, lang: string, rate = 0.85) {
+function falar(texto: string, lang: string, rate = 0.85, onDone?: () => void) {
   if (typeof window === 'undefined' || !window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
+
   const u = new SpeechSynthesisUtterance(texto);
   u.lang = lang;
   u.rate = rate;
+
+  const voices = window.speechSynthesis.getVoices();
+  const langPrefix = lang.split('-')[0].toLowerCase();
+  const candidatas = voices.filter((voice) => voice.lang.toLowerCase().startsWith(langPrefix));
+
+  const preferida =
+    candidatas.find((voice) => /google|microsoft|natural|neural/i.test(voice.name)) ??
+    candidatas[0];
+
+  if (preferida) u.voice = preferida;
+
+  if (onDone) {
+    u.onend = onDone;
+    u.onerror = onDone;
+  }
+
+  window.speechSynthesis.cancel();
   window.speechSynthesis.speak(u);
 }
 
@@ -163,13 +180,7 @@ export default function DitadoPage() {
     if (!frase) return;
     setFalando(true);
     setFraseOuvida(true);
-    const u = new SpeechSynthesisUtterance(frase.frase);
-    u.lang = langCode;
-    u.rate = devagar ? 0.7 : 0.85;
-    u.onend = () => setFalando(false);
-    u.onerror = () => setFalando(false);
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(u);
+    falar(frase.frase, langCode, devagar ? 0.7 : 0.85, () => setFalando(false));
 
     // Focus textarea after short delay
     setTimeout(() => textareaRef.current?.focus(), 400);
