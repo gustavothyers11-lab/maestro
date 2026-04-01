@@ -7,6 +7,15 @@ import { useRouter } from 'next/navigation';
 
 const MODOS = [
   {
+    emoji: '💬',
+    titulo: 'Conversa',
+    descricao: 'Ouça o dialogo entre 2 pessoas e digite cada fala no idioma de estudo',
+    dificuldade: 'Intermediário',
+    badgeClass: 'border-cyan-500/40 bg-cyan-500/20 text-cyan-300',
+    href: '/dashboard/praticar/conversa',
+    iconGlow: 'shadow-cyan-500/30',
+  },
+  {
     emoji: '🎧',
     titulo: 'Ditado',
     descricao: 'Ouça frases no idioma de estudo e escreva o que entendeu',
@@ -53,7 +62,7 @@ export default function PraticarPage() {
           </p>
         </header>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-4">
           {MODOS.map((modo, idx) => (
             <article
               key={modo.titulo}
