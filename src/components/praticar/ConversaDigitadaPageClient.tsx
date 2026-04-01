@@ -31,6 +31,11 @@ interface ResultadoValidacao {
   fraseCorreta: string;
 }
 
+interface VozesDialogo {
+  A: SpeechSynthesisVoice | null;
+  B: SpeechSynthesisVoice | null;
+}
+
 const DIALOGOS: Record<string, Dialogo> = {
   es: {
     titulo: 'Conversa no cafe',
@@ -120,22 +125,40 @@ function similaridade(fraseEsperada: string, fraseDigitada: string): number {
   return maxLen === 0 ? 1 : 1 - dist / maxLen;
 }
 
-function falar(texto: string, lang: string, rate = 0.9): Promise<void> {
+function selecionarVozes(lang: string): VozesDialogo {
+  if (typeof window === 'undefined' || !window.speechSynthesis) {
+    return { A: null, B: null };
+  }
+
+  const voices = window.speechSynthesis.getVoices();
+  const prefix = lang.split('-')[0].toLowerCase();
+  const candidatas = voices.filter((v) => v.lang.toLowerCase().startsWith(prefix));
+  const ordenadas = [...candidatas].sort((a, b) => {
+    const score = (v: SpeechSynthesisVoice) => {
+      const n = v.name.toLowerCase();
+      if (/neural|natural|premium/.test(n)) return 3;
+      if (/microsoft|google|apple/.test(n)) return 2;
+      return 1;
+    };
+    return score(b) - score(a);
+  });
+
+  const vozA = ordenadas[0] ?? null;
+  const vozB = ordenadas.find((v) => v.name !== vozA?.name) ?? vozA;
+
+  return { A: vozA, B: vozB };
+}
+
+function falar(texto: string, lang: string, rate = 0.9, voice?: SpeechSynthesisVoice | null, pitch?: number): Promise<void> {
   if (typeof window === 'undefined' || !window.speechSynthesis) return Promise.resolve();
 
   return new Promise((resolve) => {
     const utter = new SpeechSynthesisUtterance(texto);
     utter.lang = lang;
     utter.rate = rate;
+    if (typeof pitch === 'number') utter.pitch = pitch;
 
-    const voices = window.speechSynthesis.getVoices();
-    const prefix = lang.split('-')[0].toLowerCase();
-    const candidatas = voices.filter((v) => v.lang.toLowerCase().startsWith(prefix));
-    const preferida =
-      candidatas.find((v) => /google|microsoft|natural|neural/i.test(v.name)) ??
-      candidatas[0];
-
-    if (preferida) utter.voice = preferida;
+    if (voice) utter.voice = voice;
 
     utter.onend = () => resolve();
     utter.onerror = () => resolve();
@@ -167,6 +190,7 @@ export default function ConversaDigitadaPageClient() {
   const [indiceAtual, setIndiceAtual] = useState(0);
   const [resposta, setResposta] = useState('');
   const [resultado, setResultado] = useState<ResultadoValidacao | null>(null);
+  const [vozes, setVozes] = useState<VozesDialogo>({ A: null, B: null });
   const [tocandoConversa, setTocandoConversa] = useState(false);
   const [indiceFalando, setIndiceFalando] = useState<number | null>(null);
   const [acertos, setAcertos] = useState(0);
@@ -189,9 +213,20 @@ export default function ConversaDigitadaPageClient() {
           const code = getLangCode(data?.idioma);
           setLangCode(code);
           setDialogo(escolherDialogo(code));
+          setVozes(selecionarVozes(code));
         });
     });
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    const syncVoices = () => setVozes(selecionarVozes(langCode));
+    syncVoices();
+    window.speechSynthesis.onvoiceschanged = syncVoices;
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, [langCode]);
 
   useEffect(() => {
     if (finalizado) return undefined;
@@ -221,21 +256,21 @@ export default function ConversaDigitadaPageClient() {
     setSegundosRestantes(10 * 60);
   }, [langCode]);
 
-  const tocarConversaCompleta = useCallback(async () => {
+  const ouvirConversa = useCallback(async () => {
     if (tocandoConversa || finalizado) return;
     setTocandoConversa(true);
-    setResultado(null);
     try {
       for (let i = 0; i < dialogo.turnos.length; i += 1) {
-        setIndiceFalando(i);
-        await falar(dialogo.turnos[i].texto, langCode, 0.88);
+        const turno = dialogo.turnos[i];
+        const voice = turno.speaker === 'A' ? vozes.A : vozes.B;
+        const pitch = turno.speaker === 'A' ? 1.08 : 0.9;
+        await falar(turno.texto, langCode, 0.9, voice, pitch);
         await new Promise((r) => setTimeout(r, 260));
       }
     } finally {
-      setIndiceFalando(null);
       setTocandoConversa(false);
     }
-  }, [dialogo.turnos, finalizado, langCode, tocandoConversa]);
+  }, [dialogo.turnos, finalizado, langCode, tocandoConversa, vozes.A, vozes.B]);
 
   const validar = useCallback(() => {
     if (!turnoAtual || !resposta.trim()) return;
@@ -338,53 +373,46 @@ export default function ConversaDigitadaPageClient() {
                 <p className="text-xs text-white/45 mt-2">Dica em portugues: {turnoAtual.traducao}</p>
               </div>
 
-              <div className="rounded-xl border border-cyan-400/20 bg-cyan-500/10 p-3">
-                <button
-                  type="button"
-                  onClick={tocarConversaCompleta}
-                  disabled={tocandoConversa}
-                  className="rounded-lg bg-cyan-500/20 border border-cyan-300/30 px-4 py-2 text-xs font-bold text-cyan-100 hover:bg-cyan-500/30 disabled:opacity-60"
-                >
-                  {tocandoConversa ? 'Tocando conversa A/B...' : 'Tocar conversa completa (A e B)'}
-                </button>
-                <p className="mt-2 text-[11px] text-cyan-100/80">
-                  Agora a conversa flui entre as duas pessoas sem depender da validacao.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                {dialogo.turnos.map((turno, i) => {
-                  const ativo = i === indiceFalando;
-                  return (
-                    <div
-                      key={`${turno.speaker}-${i}`}
-                      className={`rounded-lg border px-3 py-2 text-sm transition-all ${
-                        ativo
-                          ? 'border-cyan-300/50 bg-cyan-500/15 text-cyan-100'
-                          : 'border-white/10 bg-white/5 text-white/70'
-                      }`}
-                    >
-                      <span className="font-bold mr-2">{turno.speaker}:</span>
-                      {turno.texto}
-                    </div>
-                  );
-                })}
-              </div>
+              {tentativas > 0 && (
+                <div className="space-y-2">
+                  {dialogo.turnos.slice(0, Math.max(1, indiceAtual)).map((turno, i) => {
+                    const ativo = i === indiceFalando;
+                    return (
+                      <div
+                        key={`${turno.speaker}-${i}`}
+                        className={`rounded-lg border px-3 py-2 text-sm transition-all ${
+                          ativo
+                            ? 'border-cyan-300/50 bg-cyan-500/15 text-cyan-100'
+                            : 'border-white/10 bg-white/5 text-white/70'
+                        }`}
+                      >
+                        <span className="font-bold mr-2">{turno.speaker}:</span>
+                        {turno.texto}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => falar(turnoAtual.texto, langCode, 0.9)}
-                  className="rounded-xl bg-gradient-to-r from-[#1260CC] to-[#0ABFDE] px-4 py-2.5 text-sm font-bold text-white hover:brightness-110 transition"
+                  onClick={ouvirConversa}
+                  disabled={tocandoConversa}
+                  className="rounded-xl bg-gradient-to-r from-[#1260CC] to-[#0ABFDE] px-4 py-2.5 text-sm font-bold text-white hover:brightness-110 transition disabled:opacity-60"
                 >
-                  Ouvir fala
+                  {tocandoConversa ? 'Reproduzindo conversa...' : 'Ouvir conversa'}
                 </button>
                 <button
                   type="button"
-                  onClick={() => falar(turnoAtual.texto, langCode, 0.72)}
+                  onClick={() => {
+                    const voice = turnoAtual.speaker === 'A' ? vozes.A : vozes.B;
+                    const pitch = turnoAtual.speaker === 'A' ? 1.08 : 0.9;
+                    void falar(turnoAtual.texto, langCode, 0.75, voice, pitch);
+                  }}
                   className="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white/90 hover:bg-white/10 transition"
                 >
-                  Ouvir devagar
+                  Ouvir fala devagar
                 </button>
               </div>
 
@@ -471,7 +499,11 @@ export default function ConversaDigitadaPageClient() {
                     <p className="text-base font-medium text-white">{resultado.fraseCorreta}</p>
                     <button
                       type="button"
-                      onClick={() => void falar(resultado.fraseCorreta, langCode)}
+                      onClick={() => {
+                        const voice = turnoAtual.speaker === 'A' ? vozes.A : vozes.B;
+                        const pitch = turnoAtual.speaker === 'A' ? 1.08 : 0.9;
+                        void falar(resultado.fraseCorreta, langCode, 0.9, voice, pitch);
+                      }}
                       className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-300 hover:text-amber-200 transition-colors"
                     >
                       Ouvir novamente
