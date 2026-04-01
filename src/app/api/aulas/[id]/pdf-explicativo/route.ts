@@ -41,9 +41,9 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ i
   const model = process.env.ANTHROPIC_SONNET_MODEL || 'claude-sonnet-4-20250514';
 
   const system = `Você é um professor de idiomas criando material didático em PORTUGUÊS para estudantes brasileiros.
-Crie um PDF explicativo bem estruturado baseado na transcrição de uma aula.
+Crie um material explicativo robusto, organizado e didático, mas objetivo.
 Identifique o idioma da transcrição e use-o nos exemplos.
-O material deve ser claro, organizado e útil para revisão.`;
+Priorize clareza e revisão rápida: frases curtas, listas e exemplos práticos.`;
 
   const prompt = `Baseado na transcrição abaixo, crie um material explicativo completo em PORTUGUÊS (com os termos no idioma de estudo quando necessário).
 
@@ -55,6 +55,14 @@ Estruture o conteúdo com as seguintes seções (use apenas as que fizerem senti
 4. **Exemplos práticos** — Frases de exemplo com tradução
 5. **Regras e dicas** — Regras gramaticais ou dicas de uso
 6. **Exercícios sugeridos** — 3 a 5 exercícios para praticar (com gabarito)
+
+REGRAS DE QUALIDADE E TAMANHO (importante):
+- Escreva de forma clara e pedagógica, sem enrolação.
+- Cada seção deve ter de 4 a 8 linhas curtas.
+- Use marcadores simples quando possível (uma ideia por linha).
+- Em "Exemplos práticos", sempre inclua frase no idioma de estudo + tradução.
+- Em "Regras e dicas", inclua alertas de erro comum começando por "Dica:".
+- Evite repetir a mesma explicação em seções diferentes.
 
 Retorne APENAS um JSON válido no formato:
 {
@@ -80,7 +88,7 @@ ${transcricao.slice(0, 12000)}`;
       },
       body: JSON.stringify({
         model,
-        max_tokens: 4000,
+        max_tokens: 3600,
         temperature: 0.3,
         system,
         messages: [{ role: 'user', content: prompt }],
