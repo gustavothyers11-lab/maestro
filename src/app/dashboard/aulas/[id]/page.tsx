@@ -299,11 +299,11 @@ export default function AulaDetalhePage() {
         const paleta = coresSecao(secao.titulo);
         checkNewPage(18);
 
-        doc.setFillColor(...paleta.fill);
+        doc.setFillColor(paleta.fill[0], paleta.fill[1], paleta.fill[2]);
         doc.roundedRect(marginLeft, y - 5, maxWidth, 8, 1.5, 1.5, 'F');
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
-        doc.setTextColor(...paleta.text);
+        doc.setTextColor(paleta.text[0], paleta.text[1], paleta.text[2]);
         doc.text(p(secao.titulo), marginLeft + 3, y);
         doc.setTextColor(0, 0, 0);
         y += 8;
