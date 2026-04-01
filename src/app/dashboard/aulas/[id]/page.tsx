@@ -245,6 +245,9 @@ export default function AulaDetalhePage() {
       const { default: jsPDF } = await import('jspdf');
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
+      // Helvetica nao suporta acentos — normaliza sem perder legibilidade
+      const p = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss').replace(/ñ/g, 'n').replace(/Ñ/g, 'N');
+
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       const marginLeft = 20;
@@ -262,7 +265,7 @@ export default function AulaDetalhePage() {
       // Título principal
       doc.setFontSize(20);
       doc.setFont('helvetica', 'bold');
-      const tituloLinhas = doc.splitTextToSize(conteudo.titulo || aula.titulo, maxWidth);
+      const tituloLinhas = doc.splitTextToSize(p(conteudo.titulo || aula.titulo), maxWidth);
       checkNewPage(tituloLinhas.length * 8 + 10);
       doc.text(tituloLinhas, marginLeft, y);
       y += tituloLinhas.length * 8 + 4;
@@ -277,7 +280,7 @@ export default function AulaDetalhePage() {
       for (const secao of conteudo.secoes) {
         doc.setFontSize(14);
         doc.setFont('helvetica', 'bold');
-        const secTituloLinhas = doc.splitTextToSize(secao.titulo, maxWidth);
+        const secTituloLinhas = doc.splitTextToSize(p(secao.titulo), maxWidth);
         checkNewPage(secTituloLinhas.length * 6 + 12);
         doc.setTextColor(0, 120, 180);
         doc.text(secTituloLinhas, marginLeft, y);
@@ -293,7 +296,7 @@ export default function AulaDetalhePage() {
             y += 3;
             continue;
           }
-          const linhas = doc.splitTextToSize(paragrafo, maxWidth);
+          const linhas = doc.splitTextToSize(p(paragrafo), maxWidth);
           checkNewPage(linhas.length * 5 + 4);
           doc.text(linhas, marginLeft, y);
           y += linhas.length * 5 + 2;
@@ -304,12 +307,12 @@ export default function AulaDetalhePage() {
 
       // Rodapé
       const totalPages = doc.getNumberOfPages();
-      for (let p = 1; p <= totalPages; p++) {
-        doc.setPage(p);
+      for (let pg = 1; pg <= totalPages; pg++) {
+        doc.setPage(pg);
         doc.setFontSize(8);
         doc.setFont('helvetica', 'italic');
         doc.setTextColor(150, 150, 150);
-        doc.text(`Maestro — ${aula.titulo} — Página ${p}/${totalPages}`, marginLeft, pageHeight - 10);
+        doc.text(`Maestro — ${p(aula.titulo)} — Pagina ${pg}/${totalPages}`, marginLeft, pageHeight - 10);
         doc.setTextColor(0, 0, 0);
       }
 
